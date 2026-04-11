@@ -1,0 +1,141 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+.turbo
+dist
+build
+out
+coverage
+*.tsbuildinfo
+
+# Next.js
+.next/
+next-env.d.ts
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+*.err
+logs
+apps/web/mailhog-tmp.json
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Editors
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# Claude local state
+.claude
+
+# One-off history build script (local only)
+/.build-history.sh
+
+# TLS certificates / private keys (never committed)
+apps/web/certificates/
+
+# Secrets (plaintext)
+**/secrets.yaml
+!**/secrets.sops.yaml
+
+# Archive (legacy Express + HTML stack kept for reference; never deployed)
+# We keep the directory tracked but ignore its heavy subtrees.
+archive/legacy/node_modules
+archive/legacy/**/*.db
+archive/legacy/**/*.db-wal
+archive/legacy/**/*.db-shm
+archive/legacy/**/*.log
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+
+# Temp
+tmp
+.tmp
+*.pid
+
+# TestFirm dev-only harness in-memory user mirror
+.test-firm-*.json
+
+# Dev tools (never committed)
+apps/web/db-query.mjs
+
+# Seed scripts (contain test passwords / dev fixtures)
+apps/web/scripts/seed-*.ts
+
+# User upload binaries (privacy: never tracked)
+apps/web/data/uploads/
+
+# Private reference materials
+ref-dosyalar/
+
+# One-off integration test fixtures (not production code)
+apps/web/scripts/test-*.mjs
+
+# Production TODO tracking (project-internal, not for audit/deploy)
+PROD-TODO.md
+
+# Legacy reference materials (docs + legacy Express stack)
+archive/
+
+# Dev-only KYC snapshot dumps + race-test harness (never committed)
+apps/web/.archive/
+apps/web/.race-test/
+apps/web/.dev-logs/
+
+# Internal sprint/planning docs (not product documentation)
+apps/web/docs/
+
+# DB migrations — schema source of truth is src/lib/db/schema/*.ts;
+# migrations are regenerated per-environment via `drizzle-kit generate`.
+apps/web/src/lib/db/migrations/
+
+# AI assistant instructions (project-internal, not for production/audit)
+CLAUDE.md
+
+# Generated OpenAPI artifacts — regenerated via `pnpm openapi:build`
+docs/api/openapi.json
+docs/api/openapi.yaml
+
+# Internal planning docs (not product documentation)
+fhevm/PLAN.md
+
+# Vendored upstream Zama FHEVM documentation mirror (third-party, not our code)
+fhevm/docs/
+
+# Internal project docs (ADRs, architecture, compliance, ops runbooks, security
+# audit). The live product documentation is served from the web app itself
+# (apps/web/src/content/docs), so this internal folder is not published.
+# NOTE: anchored to repo root only, so it does NOT match the app's own
+# docs directories (src/components/docs, src/content/docs, src/lib/docs).
+/docs/*
+# ...but DO publish the README's screenshots and media.
+!/docs/media/
+
+# Prior-deployment metrics sidecar (validator host only; not used by the app)
+infra/alloy/
+
+# Demo video script + scratch design exports (project-internal)
+DEMO-SCRIPT.md
+/_nft-dark.svg
+/_nft-light.svg
