@@ -1,0 +1,37 @@
+{
+  "name": "crivacy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Crivacy KYC — FHE-powered re-usable KYC credential platform (B2B API).",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yaml,yml}\"",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "prettier": "3.3.3",
+    "prettier-plugin-tailwindcss": "0.6.9",
+    "turbo": "2.3.3",
+    "typescript": "5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "protobufjs": "^7.5.5",
+      "uuid": "^14.0.0",
+      "postcss": "^8.5.10"
+    }
+  }
+}
