@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Root tsconfig — editor / IDE entrypoint only. The actual per-package typecheck is run by `pnpm typecheck` (turbo fan-out into apps/web/tsconfig.json and packages/shared-types/tsconfig.json). Project references are intentionally not used: apps/web has the Next.js plugin and disables `noUnusedLocals`, while shared-types is a source-only package consumed via the workspace `main` field — neither benefits from `composite: true` builds.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": [],
+  "include": []
+}
