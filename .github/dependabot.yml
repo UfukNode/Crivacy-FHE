@@ -1,0 +1,76 @@
+# Dependabot — automated dependency maintenance for Crivacy.
+#
+# Covers two ecosystems:
+#
+#   1. npm (monorepo root) — pnpm reads `pnpm-lock.yaml`, Dependabot
+#      treats it as an npm manifest for metadata + CVE lookups. The
+#      root schedule covers `apps/web`, `packages/*` via the workspace
+#      declaration in `pnpm-workspace.yaml`.
+#
+#   2. github-actions — pairs with the SHA-pinned actions in
+#      `.github/workflows/ci.yml`. When `actions/checkout@v4.3.1`
+#      cuts a new release, Dependabot opens a PR that bumps the pinned
+#      SHA + updates the trailing tag comment. Keeps the pinning
+#      current without a human manually chasing releases.
+#
+# Security updates run daily; version updates run weekly to keep PR
+# noise manageable. Minor/patch bumps auto-group so a typical Monday
+# PR is a single merge, not 40 separate ones.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - javascript
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(actions)
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+
+  # `infra/scripts/telegram-alert-bot/Dockerfile` pins `node:22-alpine`
+  # to a digest so a retagged upstream cannot silently land a
+  # compromised layer. Dependabot watches this directory and opens a
+  # PR updating the SHA256 as newer images ship. Same cadence as the
+  # other ecosystems to keep Monday PR noise bundled.
+  - package-ecosystem: docker
+    directory: /infra/scripts/telegram-alert-bot
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore(docker)
+      include: scope
+    labels:
+      - dependencies
+      - docker
