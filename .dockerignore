@@ -1,0 +1,72 @@
+# Repo-root .dockerignore for the apps/web Dockerfile.
+#
+# The Dockerfile builds from the repo root so it can reach
+# pnpm-workspace.yaml + packages/. Without this ignore list the
+# build context would balloon by hundreds of MB (node_modules,
+# .next, data/, .git) and risk leaking secrets.
+
+# Node — never ship a host node_modules into the image; deps
+# stage installs from pnpm-lock inside the build.
+**/node_modules
+**/.pnpm-store
+
+# Build artefacts from a previous host build. The build stage
+# runs `pnpm build` inside the image, so reusing the host's
+# stale .next would corrupt the trace.
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/.tsbuildinfo
+
+# Secrets — env files NEVER enter the build context. Production
+# secrets are injected at run time via the orchestrator.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Credential / SSH material that some contributor paths drop
+# into the repo root. Keep them out of every image build.
+*.pem
+*.key
+*.opensshkey
+*-openssh-key
+
+# Local user-uploaded fixtures + dev avatars that would bloat
+# the build context.
+apps/web/data
+apps/web/data/uploads
+
+# Reference docs cloned into the repo for offline browsing.
+ref-dosyalar
+
+# Editor + tooling state.
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+
+# Git metadata — Docker doesn't need it for the build.
+.git
+.gitattributes
+
+# Test reports / artefacts.
+**/test-results
+**/*.test.snap
+
+# Claude Code working files (private to the developer).
+.claude
+**/.claude
+
+# Standalone trace / cache directories.
+**/standalone
+**/.cache
+
+# Lockfile lives at repo root; per-package lockfiles do not exist
+# in this monorepo, but if any contributor accidentally creates
+# one keep it out of the image.
+**/package-lock.json
+**/yarn.lock
