@@ -1,0 +1,13 @@
+node_modules
+.next
+.turbo
+dist
+build
+coverage
+pnpm-lock.yaml
+archive
+**/*.generated.ts
+**/*.generated.tsx
+# Drizzle-kit owns these files; regenerated on every `db:generate`.
+apps/web/src/lib/db/migrations/**/*.sql
+apps/web/src/lib/db/migrations/meta/**
