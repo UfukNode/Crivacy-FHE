@@ -1,0 +1,53 @@
+{
+  "name": "@crivacy/js-sdk",
+  "version": "0.1.0",
+  "description": "Crivacy OAuth 2.0 + OIDC client SDK for browsers and Node.js. Wraps the /oauth/authorize + /oauth/token + /oauth/userinfo endpoints for firms integrating Crivacy KYC.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "viem": "^2.54.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crivacy/crivacy",
+    "directory": "packages/js-sdk"
+  },
+  "keywords": [
+    "crivacy",
+    "kyc",
+    "oauth",
+    "oidc",
+    "authentication",
+    "fhe"
+  ]
+}
