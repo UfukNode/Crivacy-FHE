@@ -1,0 +1,54 @@
+{
+  "name": "@crivacy-fhe/credential",
+  "version": "0.1.0",
+  "description": "Crivacy FHE KYC credential SDK. Issues, reads, grants access to, and decrypts confidential KYC credentials on the CrivacyKYC contract (Zama FHEVM / Sepolia).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "@zama-fhe/sdk": "^3.2.0",
+    "viem": "^2.54.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "typescript": "5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crivacy/crivacy",
+    "directory": "packages/fhe-credential"
+  },
+  "keywords": [
+    "crivacy",
+    "kyc",
+    "fhe",
+    "fhevm",
+    "zama",
+    "credential",
+    "confidential",
+    "sepolia"
+  ]
+}
