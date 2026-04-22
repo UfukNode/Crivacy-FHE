@@ -1,0 +1,606 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-fg: var(--color-fg);
+  --color-muted: var(--color-muted);
+  --color-accent: var(--color-accent);
+  --color-border: var(--color-border);
+  --color-surface: var(--color-surface);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+
+  --font-family-sans: var(--font-inter), system-ui, sans-serif;
+  --font-family-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Tailwind v4 removed default cursor:pointer from interactive elements.
+   Restore it globally so we don't need to add cursor-pointer everywhere. */
+button,
+[role='button'],
+[type='button'],
+[type='submit'],
+[type='reset'],
+select,
+summary,
+a[href] {
+  cursor: pointer;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+/* Prevent text size adjustment on orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Every hash navigation, whether the browser handling `#anchor`,
+   * a `scrollIntoView` call, or a same-page Link click, respects
+   * `scroll-padding-top` on the scroll container. Setting it at the
+   * root means we don't have to remember to stamp `scroll-margin`
+   * onto every individual heading. The value leaves room for the
+   * 3.5rem sticky docs header plus breathing room so the landed
+   * heading doesn't kiss the header edge. */
+  scroll-padding-top: 5.5rem;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-family-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: var(--leading-normal);
+  /* Block the browser-chrome pull-to-refresh / overscroll bounce on
+   * page-level swipes (Stripe/Linear pattern). The form-only rule
+   * below already protects field-level scroll; pairing the two means
+   * a logged-out user dragging the auth shell can't yank a refresh
+   * that wipes a half-typed credential. `contain` (rather than
+   * `none`) keeps in-page scroll containers behaving normally. */
+  overscroll-behavior-y: contain;
+}
+
+:focus-visible {
+  outline: var(--ring-width) solid var(--ring-color);
+  outline-offset: var(--ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+/* Command-palette fields opt out of the global outline, a boxed
+ * ring on a borderless input looks amateur and the cursor + row
+ * chrome already signal focus. */
+.docs-search-field:focus,
+.docs-search-field:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+code,
+pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+}
+
+/* Prevent double-tap zoom on buttons/links (mobile) */
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* Safe area insets for notched devices */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-left { padding-left: env(safe-area-inset-left); }
+.safe-right { padding-right: env(safe-area-inset-right); }
+.safe-x { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+
+/* Prevent form container overscroll (pull-to-refresh interference) */
+form { overscroll-behavior: none; }
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Phone input (react-phone-number-input) theme override                      */
+/* -------------------------------------------------------------------------- */
+
+.crivacy-phone-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-fg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.crivacy-phone-input:focus-within {
+  outline: none;
+  ring: 2px solid var(--ring-color);
+  border-color: var(--ring-color);
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+.crivacy-phone-input--error {
+  border-color: var(--color-danger);
+}
+.crivacy-phone-input--error:focus-within {
+  box-shadow: 0 0 0 2px var(--color-danger);
+}
+
+/* Country select button */
+.crivacy-phone-input .PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  /* Never let the selector be squeezed into the text input under narrow
+   * widths or heavier font metrics, it stays intrinsically sized while the
+   * input absorbs the flex. Spacing to the input is owned solely by the
+   * container `gap` (0.5rem); the library ships a default `margin-right` that
+   * would double-count, so it is zeroed here (single source of truth). */
+  flex-shrink: 0;
+  margin-right: 0;
+}
+
+.crivacy-phone-input .PhoneInputCountryIcon {
+  width: 1.25rem;
+  height: 0.9375rem;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.crivacy-phone-input .PhoneInputCountrySelectArrow {
+  border-color: var(--color-muted);
+  opacity: 0.6;
+}
+
+/* Country dropdown */
+.crivacy-phone-input .PhoneInputCountrySelect {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.crivacy-phone-input .PhoneInputCountrySelect option {
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+
+/* Actual text input */
+.crivacy-phone-input .PhoneInputInput {
+  flex: 1;
+  /* Flex items default to `min-width: auto`, which refuses to shrink below
+   * their content and can push a long value/placeholder under the country
+   * selector. `min-width: 0` lets the input shrink and scroll its own text
+   * instead of overflowing the row. */
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.crivacy-phone-input .PhoneInputInput::placeholder {
+  color: var(--color-muted);
+}
+
+.crivacy-phone-input .PhoneInputInput:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Docs prose, first-class typography for the /docs surface.                  */
+/* -------------------------------------------------------------------------- */
+/* The docs rely on a hand-rolled prose scale instead of @tailwindcss/typography
+ * because (a) we need theme-aware colors via CSS vars that aren't well-known
+ * to the plugin, and (b) the plugin's h2 underline treatment clashes with our
+ * minimalist fintech aesthetic. Every rule here addresses something visible on
+ * a real docs page, no speculative selectors. */
+
+.docs-prose {
+  color: var(--color-fg);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.docs-prose > * + * {
+  margin-top: 1em;
+}
+
+/* ----- Headings ---------------------------------------------------------- */
+.docs-prose h2,
+.docs-prose h3,
+.docs-prose h4 {
+  color: var(--color-fg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  /* Per-heading fallback in case a browser somehow ignores the
+   * html `scroll-padding-top`. Matches the root value; keeping
+   * both is cheap and harmless. */
+  scroll-margin-top: 5.5rem;
+  position: relative;
+}
+
+/* `:target` flash, when a reader lands on a heading via a hash
+ * link (search dialog, TOC click, direct URL, dashboard webhook
+ * "View in docs"), paint a brief accent-tinted background + left
+ * rail for ~1.6s. It's a "you are here" confirmation that fades
+ * out on its own so it never becomes clutter. Pattern borrowed
+ * from Stripe / Vercel / GitHub docs. */
+@keyframes docs-target-pulse {
+  0% {
+    background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+  70% {
+    background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+
+.docs-prose h2:target,
+.docs-prose h3:target,
+.docs-prose h4:target,
+.docs-prose h2[data-flash='true'],
+.docs-prose h3[data-flash='true'],
+.docs-prose h4[data-flash='true'] {
+  animation: docs-target-pulse 1600ms ease-out forwards;
+  /* Let the highlight bleed a few px left/right of the headline
+   * so the rail sits cleanly outside the glyphs. */
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  margin-right: -0.75rem;
+  padding-right: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Users who opt into reduced motion still see the highlight,
+ * just without the fade. Respect their setting. */
+@media (prefers-reduced-motion: reduce) {
+  .docs-prose h2:target,
+  .docs-prose h3:target,
+  .docs-prose h4:target,
+  .docs-prose h2[data-flash='true'],
+  .docs-prose h3[data-flash='true'],
+  .docs-prose h4[data-flash='true'] {
+    animation: none;
+    background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+}
+
+/* Heading rhythm mirrors Stripe / Vercel / Linear docs:
+ * h2 28 → h3 21 → h4 17 over a 15–16px body gives three clear
+ * stops. Smaller jumps (e.g. 19 → 15) read as "bold body" rather
+ * than "section heading", which was the last complaint. */
+.docs-prose h2 {
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin-top: 3.25rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.docs-prose h3 {
+  font-size: 21px;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.docs-prose h4 {
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -0.008em;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+/* The "#" anchor that rehype-autolink-headings appends. Hidden
+ * until the heading is hovered, avoids visual noise in the
+ * default reading state. */
+.docs-prose .heading-anchor {
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: var(--color-muted);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease;
+  font-weight: 400;
+}
+.docs-prose .heading-anchor::before {
+  content: '#';
+}
+.docs-prose h2:hover .heading-anchor,
+.docs-prose h3:hover .heading-anchor,
+.docs-prose h4:hover .heading-anchor,
+.docs-prose .heading-anchor:focus-visible {
+  opacity: 1;
+}
+.docs-prose .heading-anchor:hover {
+  color: var(--color-accent);
+}
+
+/* ----- Body copy + inline elements --------------------------------------- */
+.docs-prose p {
+  color: var(--color-fg);
+  opacity: 0.88;
+}
+
+.docs-prose a:not(.heading-anchor) {
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 150ms ease;
+}
+.docs-prose a:not(.heading-anchor):hover {
+  border-bottom-color: currentColor;
+}
+
+.docs-prose strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.docs-prose em {
+  font-style: italic;
+}
+
+.docs-prose ul,
+.docs-prose ol {
+  padding-left: 1.5rem;
+}
+.docs-prose ul {
+  list-style: disc;
+}
+.docs-prose ol {
+  list-style: decimal;
+}
+.docs-prose li + li {
+  margin-top: 0.25rem;
+}
+.docs-prose li::marker {
+  color: var(--color-muted);
+}
+
+.docs-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+/* ----- Inline code ------------------------------------------------------- */
+.docs-prose :not(pre) > code {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.86em;
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+/* ----- Code blocks (Shiki dual theme) ----------------------------------- */
+/* Shiki emits `<pre class="shiki shiki-themes github-light github-dark-default">`
+ * with inline `style="background-color:#fff;color:#24292e" --shiki-dark-bg:...`
+ * when `defaultColor: false` is set. We hide whichever of the two themes
+ * doesn't match the active `data-theme` so the block retints immediately
+ * when the theme toggle runs, no hydration flash, no JS re-render. */
+.docs-prose pre {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  padding: 1rem;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.docs-prose pre,
+.docs-prose pre code {
+  font-family: var(--font-family-mono);
+}
+
+/* Dual-theme Shiki output retint, applies to every `.shiki.shiki-themes`
+ * <pre> on the site, not just docs prose. The dashboard quickstart drawer
+ * uses the same `<CodeBlock>` runtime highlighter and was previously left
+ * with a transparent background outside the `.docs-prose` scope, which
+ * showed through whichever surface it landed in (drawer Sheet, modal,
+ * playground panel, etc.) instead of the carefully tuned shiki bg.
+ *
+ * Keeping the `--shiki-{light,dark}` token scoped to spans (with `!important`)
+ * is load-bearing, Shiki emits per-token inline styles in dual-theme mode
+ * and we only want the wrapper bg to come from theme, not the per-token
+ * fallback colour. */
+:root[data-theme='light'] pre.shiki.shiki-themes,
+:root[data-theme='light'] pre.shiki.shiki-themes code {
+  background: #f6f8fa;
+  color: var(--shiki-light);
+}
+:root[data-theme='light'] pre.shiki.shiki-themes span {
+  color: var(--shiki-light) !important;
+  font-style: var(--shiki-light-font-style) !important;
+  font-weight: var(--shiki-light-font-weight) !important;
+  text-decoration: var(--shiki-light-text-decoration) !important;
+}
+:root:not([data-theme='light']) pre.shiki.shiki-themes,
+:root:not([data-theme='light']) pre.shiki.shiki-themes code {
+  background: #0b0d10;
+  color: var(--shiki-dark);
+}
+:root:not([data-theme='light']) pre.shiki.shiki-themes span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* Explicitly strip Shiki's per-token background stamps. When
+ * `defaultColor: false` is enabled, Shiki emits an inline
+ * `background-color` on every token span sourced from the theme's
+ * token bg. Whitespace / indent tokens often resolve to a value that
+ * differs from the `<pre>` background by a few RGB points, which the
+ * user sees as a slightly lighter "stripe" at the start of every
+ * line. Letting the `<pre>` wrapper own the single background fixes
+ * the patchwork look without losing syntax colours. Scoped to
+ * `.shiki.shiki-themes` so the rule reaches dashboard / drawer
+ * usages too, not only docs prose. */
+pre.shiki.shiki-themes span,
+pre.shiki.shiki-themes .line {
+  background-color: transparent !important;
+}
+
+/* ----- Test-chain-Dapp dark Shiki override ----------------------------- */
+/* The test-firm harness pins `data-theme='dark'` on a wrapper div
+ * (`.tcd-shell`) rather than the root `<html>` so the rest of the
+ * Crivacy app keeps its own theme. Shiki's dual-theme retint rules
+ * above key off `:root[data-theme]`, which means a visitor whose
+ * system prefers `light` would see a white code box dropped onto a
+ * stone-950 dApp surface. These rules force the dark Shiki variant
+ * inside `.tcd-shell` regardless of the root theme. */
+.tcd-shell pre.shiki.shiki-themes,
+.tcd-shell pre.shiki.shiki-themes code {
+  background: #0b0d10 !important;
+  color: var(--shiki-dark) !important;
+}
+.tcd-shell pre.shiki.shiki-themes span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* ----- Blockquote / callout --------------------------------------------- */
+.docs-prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.75rem 1rem 0.75rem 1rem;
+  border-left: 3px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--color-fg);
+}
+.docs-prose blockquote p {
+  margin: 0.25rem 0;
+  opacity: 1;
+}
+
+/* ----- Tables ------------------------------------------------------------ */
+.docs-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 14px;
+}
+.docs-prose thead {
+  border-bottom: 1px solid var(--color-border);
+}
+.docs-prose th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-fg);
+  padding: 0.625rem 0.75rem;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.docs-prose td {
+  padding: 0.625rem 0.75rem;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-fg);
+  opacity: 0.88;
+  vertical-align: top;
+}
+
+/* ----- Images ------------------------------------------------------------ */
+.docs-prose img {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+/* Credential card holographic shimmer */
+@keyframes holo-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* Tailwind animation keyframes for shadcn/ui */
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(
+        var(--tw-enter-translate-x, 0),
+        var(--tw-enter-translate-y, 0),
+        0
+      )
+      scale3d(
+        var(--tw-enter-scale, 1),
+        var(--tw-enter-scale, 1),
+        var(--tw-enter-scale, 1)
+      )
+      rotate(var(--tw-enter-rotate, 0));
+  }
+}
+
+@keyframes exit {
+  to {
+    opacity: var(--tw-exit-opacity, 1);
+    transform: translate3d(
+        var(--tw-exit-translate-x, 0),
+        var(--tw-exit-translate-y, 0),
+        0
+      )
+      scale3d(
+        var(--tw-exit-scale, 1),
+        var(--tw-exit-scale, 1),
+        var(--tw-exit-scale, 1)
+      )
+      rotate(var(--tw-exit-rotate, 0));
+  }
+}

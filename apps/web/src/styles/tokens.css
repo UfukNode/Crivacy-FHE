@@ -1,0 +1,116 @@
+/* Crivacy design tokens — brand surface.
+ * Referenced by tailwind.config.ts via CSS variables and by globals.css.
+ * Dark-mode first; light palette defined under [data-theme="light"].
+ *
+ * Palette: Emerald accent on Zinc neutrals — professional fintech aesthetic.
+ */
+
+:root {
+  /* Colors (dark default) */
+  --color-bg: #09090b;
+  --color-fg: #fafafa;
+  --color-muted: #a1a1aa;
+  /* Primary accent (button bg + ring + checked-state). Both themes
+   * use the same emerald pair: emerald-700 #047857 default (5.38:1
+   * on white, AA pass) and emerald-800 #065f46 hover (7.13:1 on
+   * white, AAA — hover-darker pattern matching Stripe/Vercel/Linear,
+   * so the hover state never regresses below the default contrast).
+   * --color-success intentionally NOT touched here — flagged as
+   * F-UI-X-COLOR-SUCCESS-DIVERGENCE-001 (P3, Phase 2.5). */
+  --color-accent: #047857;
+  --color-accent-hover: #065f46;
+  --color-accent-contrast: #ffffff;
+  /* Border: SUBTLE per sektör pattern (Stripe/Linear/Vercel) —
+   * borders are decorative, NOT the essential identifier of UI
+   * components. Inputs are identified by label + caret + focus-ring
+   * (--color-accent emerald-700, ≥4.5:1 vs body bg → exceeds WCAG
+   * 2.4.7 + 2.4.13). Buttons are identified by bg + label. Cards by
+   * bg-elevation (surface vs body) + label.
+   *
+   * Strict WCAG 1.4.11 ≥3:1 only applies when border is the SOLE
+   * identifier — not when label/focus-ring/bg-shift cover the
+   * identification role. Reverted from PR #3 zinc-500 (#71717a, 4.0:1)
+   * which made every divider/card edge bright-white-rectangle and
+   * destroyed Crivacy's professional fintech aesthetic. F-UI-C-LOGIN-012
+   * verdict-correction: subtle is sektör-correct.
+   *
+   * zinc-800 dark + zinc-200 light = ~1.34:1, parallel to Stripe ~1.4:1. */
+  --color-border: #27272a;
+  --color-surface: #18181b;
+  --color-surface-hover: #27272a;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #f43f5e;
+
+  /* Spacing scale (8px grid) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
+  --space-12: 6rem;
+
+  /* Radii (squared = fintech serious) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Typography scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+
+  /* Line heights */
+  --leading-tight: 1.2;
+  --leading-snug: 1.375;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.75;
+
+  /* Shadows (subtle, modern) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 32px -8px rgba(0, 0, 0, 0.5);
+
+  /* Focus ring */
+  --ring-color: var(--color-accent);
+  --ring-width: 2px;
+  --ring-offset: 2px;
+
+  /* Transitions */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme='light'] {
+  --color-bg: #ffffff;
+  --color-fg: #18181b;
+  --color-muted: #71717a;
+  /* Symmetric with dark: emerald-700 default, emerald-800 hover.
+   * See dark `:root` block above for the WCAG rationale. */
+  --color-accent: #047857;
+  --color-accent-hover: #065f46;
+  --color-accent-contrast: #ffffff;
+  /* Symmetric with dark: subtle zinc-200 (sektör pattern). */
+  --color-border: #e4e4e7;
+  --color-surface: #fafafa;
+  --color-surface-hover: #f4f4f5;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #e11d48;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 16px 32px -8px rgba(0, 0, 0, 0.15);
+}
