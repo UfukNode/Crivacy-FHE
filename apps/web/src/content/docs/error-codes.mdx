@@ -1,0 +1,391 @@
+---
+title: Error Codes
+description: Complete reference for all Crivacy API error codes, including HTTP statuses, descriptions, example responses, and handling guidance.
+lastUpdated: '2026-04-12'
+---
+
+## Error response format
+
+All API errors follow a consistent JSON structure:
+
+```json
+{
+  "error": {
+    "code": "invalid_api_key",
+    "message": "The provided API key is not valid.",
+    "details": {}
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `error.code` | string | Machine-readable error code (use this for programmatic handling). |
+| `error.message` | string | Human-readable description of the error. |
+| `error.details` | object | Additional context. Contents vary by error code. May be empty. |
+
+> **Note:** Always use the `code` field for error handling in your application, not the `message` field. Messages may change without notice; codes are stable.
+
+---
+
+## Authentication errors
+
+### `missing_api_key`
+
+| | |
+|---|---|
+| **HTTP status** | `401 Unauthorized` |
+| **Description** | The request did not include an `x-api-key` header. |
+| **How to handle** | Add your API key to the `x-api-key` header on every request. |
+
+```json
+{
+  "error": {
+    "code": "missing_api_key",
+    "message": "An API key is required. Include it in the x-api-key header.",
+    "details": {}
+  }
+}
+```
+
+### `invalid_api_key`
+
+| | |
+|---|---|
+| **HTTP status** | `401 Unauthorized` |
+| **Description** | The API key does not match any active key. It may be mistyped, revoked, or expired. |
+| **How to handle** | Verify the key is correct and active in Dashboard > API Keys. |
+
+```json
+{
+  "error": {
+    "code": "invalid_api_key",
+    "message": "The provided API key is not valid.",
+    "details": {}
+  }
+}
+```
+
+### `insufficient_scope`
+
+| | |
+|---|---|
+| **HTTP status** | `403 Forbidden` |
+| **Description** | The API key is valid but does not have the scope required for this endpoint. |
+| **How to handle** | Create a new key with the required scope, or update the existing key's scopes in the dashboard. |
+
+```json
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "This API key does not have the 'kyc:create' scope required for this endpoint.",
+    "details": {
+      "required_scope": "kyc:create",
+      "key_scopes": ["kyc:read"]
+    }
+  }
+}
+```
+
+### `invalid_session`
+
+| | |
+|---|---|
+| **HTTP status** | `401 Unauthorized` |
+| **Description** | The dashboard JWT session is invalid or has been revoked. |
+| **How to handle** | Log in again to obtain a new session token. |
+
+```json
+{
+  "error": {
+    "code": "invalid_session",
+    "message": "Your session is invalid. Please log in again.",
+    "details": {}
+  }
+}
+```
+
+### `expired_session`
+
+| | |
+|---|---|
+| **HTTP status** | `401 Unauthorized` |
+| **Description** | The dashboard JWT session has expired. |
+| **How to handle** | Use the refresh token endpoint or log in again. |
+
+```json
+{
+  "error": {
+    "code": "expired_session",
+    "message": "Your session has expired. Please log in again.",
+    "details": {}
+  }
+}
+```
+
+---
+
+## Validation errors
+
+### `validation_error`
+
+| | |
+|---|---|
+| **HTTP status** | `400 Bad Request` |
+| **Description** | The request body failed schema validation. The `details.issues` array contains specific field-level errors. |
+| **How to handle** | Fix the fields listed in the `issues` array and retry. |
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request body validation failed.",
+    "details": {
+      "issues": [
+        {
+          "path": ["user_ref"],
+          "code": "too_big",
+          "message": "String must contain at most 128 character(s)",
+          "maximum": 128
+        },
+        {
+          "path": ["phase"],
+          "code": "invalid_enum_value",
+          "message": "Invalid enum value. Expected 'identity' | 'address', received 'id'",
+          "options": ["identity", "address"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### `invalid_request`
+
+| | |
+|---|---|
+| **HTTP status** | `400 Bad Request` |
+| **Description** | The request is malformed (e.g., invalid JSON, wrong content type). |
+| **How to handle** | Ensure the request body is valid JSON and the `Content-Type` header is `application/json`. |
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "The request body is not valid JSON.",
+    "details": {}
+  }
+}
+```
+
+---
+
+## Rate limiting errors
+
+### `rate_limited`
+
+| | |
+|---|---|
+| **HTTP status** | `429 Too Many Requests` |
+| **Description** | You have exceeded the per-second rate limit for your tier. |
+| **How to handle** | Wait for the number of seconds in `retry_after_seconds`, then retry. Implement exponential backoff. |
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded. Please retry after the specified interval.",
+    "details": {
+      "limit": 30,
+      "remaining": 0,
+      "reset": "2026-04-12T12:00:05Z",
+      "retry_after_seconds": 2
+    }
+  }
+}
+```
+
+The response also includes rate limit headers:
+
+```
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1744459205
+Retry-After: 2
+```
+
+### `quota_exceeded`
+
+| | |
+|---|---|
+| **HTTP status** | `429 Too Many Requests` |
+| **Description** | You have exhausted your monthly API request quota. |
+| **How to handle** | Upgrade your tier in Dashboard > Settings, or wait until your quota resets at the start of the next month. |
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Monthly API quota exceeded. Upgrade your plan or wait for the next billing cycle.",
+    "details": {
+      "quota_limit": 100000,
+      "quota_used": 100000,
+      "reset_at": "2026-05-01T00:00:00Z",
+      "retry_after_seconds": 1641600
+    }
+  }
+}
+```
+
+The response also includes quota headers:
+
+```
+X-Quota-Limit: 100000
+X-Quota-Remaining: 0
+Retry-After: 1641600
+```
+
+---
+
+## Not found errors
+
+### `not_found`
+
+| | |
+|---|---|
+| **HTTP status** | `404 Not Found` |
+| **Description** | The requested resource does not exist. |
+| **How to handle** | Verify the resource ID and that you are using the correct API key (test vs. live mode resources are isolated). |
+
+```json
+{
+  "error": {
+    "code": "not_found",
+    "message": "The requested resource was not found.",
+    "details": {}
+  }
+}
+```
+
+### `session_not_found`
+
+| | |
+|---|---|
+| **HTTP status** | `404 Not Found` |
+| **Description** | The specified KYC session does not exist or does not belong to your firm. |
+| **How to handle** | Verify the session ID. Sessions created with test keys are not visible with live keys and vice versa. |
+
+```json
+{
+  "error": {
+    "code": "session_not_found",
+    "message": "KYC session 'ses_invalid123' was not found.",
+    "details": {
+      "session_id": "ses_invalid123"
+    }
+  }
+}
+```
+
+### `credential_not_found`
+
+| | |
+|---|---|
+| **HTTP status** | `404 Not Found` |
+| **Description** | No credential exists for the specified user reference. |
+| **How to handle** | Verify the user reference. The user may not have completed verification yet, or the credential may belong to a different firm. |
+
+```json
+{
+  "error": {
+    "code": "credential_not_found",
+    "message": "No credential found for user reference 'user_unknown'.",
+    "details": {
+      "user_ref": "user_unknown"
+    }
+  }
+}
+```
+
+---
+
+## Server errors
+
+### `internal_error`
+
+| | |
+|---|---|
+| **HTTP status** | `500 Internal Server Error` |
+| **Description** | An unexpected error occurred on the server. |
+| **How to handle** | Retry with exponential backoff. If the error persists, contact support with the `request_id` from the response headers. |
+
+```json
+{
+  "error": {
+    "code": "internal_error",
+    "message": "An unexpected error occurred. Please try again later.",
+    "details": {
+      "request_id": "req_7k8l9m0n"
+    }
+  }
+}
+```
+
+### `service_unavailable`
+
+| | |
+|---|---|
+| **HTTP status** | `503 Service Unavailable` |
+| **Description** | The service is temporarily unavailable due to maintenance or overload. |
+| **How to handle** | Retry after the interval specified in the `Retry-After` header. Check the [status page](https://app.crivacy.io/status) for ongoing incidents. |
+
+```json
+{
+  "error": {
+    "code": "service_unavailable",
+    "message": "The service is temporarily unavailable. Please try again later.",
+    "details": {
+      "retry_after_seconds": 60
+    }
+  }
+}
+```
+
+---
+
+## Error code summary table
+
+| Code | HTTP Status | Category | Description |
+|------|-------------|----------|-------------|
+| `missing_api_key` | 401 | Auth | No API key provided |
+| `invalid_api_key` | 401 | Auth | API key not recognized |
+| `insufficient_scope` | 403 | Auth | Key lacks required scope |
+| `invalid_session` | 401 | Auth | Dashboard session invalid |
+| `expired_session` | 401 | Auth | Dashboard session expired |
+| `validation_error` | 400 | Validation | Request body failed schema validation |
+| `invalid_request` | 400 | Validation | Malformed request (bad JSON, wrong content type) |
+| `rate_limited` | 429 | Rate limiting | Per-second rate limit exceeded |
+| `quota_exceeded` | 429 | Rate limiting | Monthly quota exhausted |
+| `not_found` | 404 | Not found | Generic resource not found |
+| `session_not_found` | 404 | Not found | KYC session not found |
+| `credential_not_found` | 404 | Not found | Credential not found |
+| `internal_error` | 500 | Server | Unexpected server error |
+| `service_unavailable` | 503 | Server | Temporary service outage |
+
+---
+
+## Best practices for error handling
+
+1. **Always check the HTTP status code first.** `2xx` means success, `4xx` means client error (fix your request), `5xx` means server error (retry).
+2. **Parse the `error.code` field** for programmatic branching, not the message.
+3. **Implement exponential backoff** for `429` and `5xx` errors. Respect the `Retry-After` header when present.
+4. **Log the `request_id`** from `5xx` responses. Include it when contacting support.
+5. **Handle `validation_error` gracefully** by iterating over `details.issues` and showing field-level feedback to your users or developers.
+
+---
+
+## Next steps
+
+- [Rate limits](/docs/rate-limits), understand tier limits and quota headers.
+- [Authentication](/docs/authentication), API key management and scopes.
+- [API reference](/docs/api-reference), full endpoint documentation.

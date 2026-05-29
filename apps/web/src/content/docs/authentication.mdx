@@ -1,0 +1,215 @@
+---
+title: Authentication
+description: Learn how to authenticate with the Crivacy API using API keys, understand scopes, and follow security best practices.
+lastUpdated: '2026-04-12'
+---
+
+## Overview
+
+Every request to the Crivacy API must include a valid API key. Keys are scoped, mode-aware (test vs. live), and revocable. This guide covers how to create, use, and manage your API keys securely.
+
+---
+
+## API key format
+
+Crivacy API keys follow a predictable format that makes them easy to identify and categorize:
+
+| Mode | Prefix | Example |
+|------|--------|---------|
+| **Live** (production) | `crv_live_` | `crv_live_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6` |
+| **Test** (sandbox) | `crv_test_` | `crv_test_f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1` |
+
+- **Live keys** (`crv_live_*`) create real Sepolia transactions and count against your monthly quota.
+- **Test keys** (`crv_test_*`) hit a sandboxed environment. No on-chain transactions are created, and no quota is consumed. Use these during development and in CI pipelines.
+
+> **Note:** The full key is shown only once at creation time. Crivacy stores only a bcrypt hash. If you lose the key, you must generate a new one.
+
+---
+
+## Passing the API key
+
+Include your key in the `x-api-key` HTTP header on every request:
+
+### cURL
+
+```curl
+curl https://api.crivacy.io/api/v1/sessions \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..."
+```
+
+### JavaScript
+
+```javascript
+const response = await fetch('https://api.crivacy.io/api/v1/sessions', {
+  headers: {
+    'x-api-key': process.env.CRIVACY_API_KEY,
+  },
+});
+```
+
+### Python
+
+```python
+import requests, os
+
+response = requests.get(
+    "https://api.crivacy.io/api/v1/sessions",
+    headers={"x-api-key": os.environ["CRIVACY_API_KEY"]},
+)
+```
+
+### Go
+
+```go
+req, _ := http.NewRequest("GET", "https://api.crivacy.io/api/v1/sessions", nil)
+req.Header.Set("x-api-key", os.Getenv("CRIVACY_API_KEY"))
+resp, err := http.DefaultClient.Do(req)
+```
+
+> **Note:** Do not pass the key as a query parameter. Query parameters may appear in server access logs and browser history.
+
+---
+
+## Scopes
+
+Each API key is assigned one or more scopes that limit which endpoints it can access. This follows the principle of least privilege: give each key only the permissions it needs.
+
+| Scope | Allows |
+|-------|--------|
+| `kyc:create` | Create new KYC sessions (`POST /api/v1/sessions`) |
+| `kyc:read` | Read sessions and credentials (`GET /api/v1/sessions/*`, `GET /api/v1/credentials/*`) |
+| `kyc:verify` | Verify a credential disclosure blob (`POST /api/v1/credentials/verify`) |
+| `webhooks:manage` | Create, update, delete, and test webhook endpoints (`/api/v1/webhooks/*`) |
+| `usage:read` | Read usage statistics and rate limit info (`GET /api/v1/usage/*`, `GET /api/v1/limits`) |
+
+### Recommended scope sets
+
+| Use case | Scopes |
+|----------|--------|
+| **Backend integration** (create sessions, read results) | `kyc:create`, `kyc:read` |
+| **Credential verification service** | `kyc:read`, `kyc:verify` |
+| **Webhook management script** | `webhooks:manage` |
+| **Monitoring / billing dashboard** | `usage:read` |
+| **Full access** (use sparingly) | All scopes |
+
+If a request requires a scope that the key does not have, the API returns a `403 Forbidden` with the `insufficient_scope` error code:
+
+```json
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "This API key does not have the 'kyc:create' scope required for this endpoint.",
+    "details": {
+      "required_scope": "kyc:create",
+      "key_scopes": ["kyc:read"]
+    }
+  }
+}
+```
+
+---
+
+## Test mode vs. live mode
+
+The key prefix determines the mode. Behavior differences:
+
+| Behavior | Test mode (`crv_test_*`) | Live mode (`crv_live_*`) |
+|----------|--------------------------|--------------------------|
+| on-chain transactions | None (mocked) | Real MainNet transactions |
+| Monthly quota | Not consumed | Consumed per request |
+| Webhook delivery | Real delivery to your endpoint | Real delivery to your endpoint |
+| Session verification | Simulated (always approved after 5s) | Real Didit ID verification |
+| Credential on-chain hash | Deterministic test hash | Real on-chain contract ID |
+| Data isolation | Separate sandbox database | Production database |
+
+> **Note:** Webhooks are delivered in both modes. This lets you test your webhook handler end-to-end with test keys before going live.
+
+---
+
+## Key lifecycle
+
+### Creating a key
+
+1. Navigate to **Dashboard > API Keys**.
+2. Click **Create Key**.
+3. Select the **mode** (test or live) and the **scopes** you need.
+4. Give the key a descriptive **name** (e.g., "Backend - Production", "CI Pipeline - Test").
+5. Copy the key immediately. It will not be shown again.
+
+### Rotating a key
+
+To rotate a key without downtime:
+
+1. Go to **Dashboard > API Keys** and click **Rotate** next to the key.
+2. A new key is generated immediately.
+3. The old key enters a **24-hour grace period** during which both old and new keys are valid.
+4. Update your application to use the new key.
+5. After 24 hours, the old key is automatically revoked.
+
+### Revoking a key
+
+Revocation is immediate. Once revoked, all requests using that key will receive `401 Unauthorized`. Revocation events are recorded in your firm's audit log.
+
+---
+
+## Security best practices
+
+### Never expose keys client-side
+
+API keys must remain on your server. Never embed them in:
+
+- Frontend JavaScript (browser)
+- Mobile application source code
+- Public repositories
+- Client-side environment variables (e.g., `NEXT_PUBLIC_*`)
+
+If a key is accidentally exposed, revoke it immediately from the dashboard.
+
+### Use environment variables
+
+Store keys in environment variables, not in source code:
+
+```bash
+# .env (never commit this file)
+CRIVACY_API_KEY=crv_live_a1b2c3d4e5f6...
+```
+
+### Apply minimal scopes
+
+Create dedicated keys for each use case with only the scopes required. A key used solely to create sessions should not have `webhooks:manage`.
+
+### Rotate regularly
+
+Rotate live keys at least every 90 days. Use the 24-hour grace window to update your deployments without downtime.
+
+### Monitor usage
+
+Check **Dashboard > API Keys** for the `last_used_at` timestamp on each key. If a key has not been used recently, consider revoking it.
+
+### IP allowlisting (optional)
+
+For additional security, you can configure an IP allowlist in **Dashboard > Settings**. Requests from IP addresses outside the allowlist will be rejected with `403 Forbidden`.
+
+---
+
+## Dashboard key management
+
+All key operations are available in the firm dashboard:
+
+| Action | Path |
+|--------|------|
+| View all keys | Dashboard > API Keys |
+| Create a key | Dashboard > API Keys > Create Key |
+| Rotate a key | Dashboard > API Keys > (key) > Rotate |
+| Revoke a key | Dashboard > API Keys > (key) > Revoke |
+| View audit log | Dashboard > Audit Log |
+
+Every key operation (create, rotate, revoke) is recorded in the audit log with the acting user, timestamp, and IP address.
+
+---
+
+## Next steps
+
+- [Getting started](/docs/getting-started), end-to-end integration in 5 minutes.
+- [Sessions](/docs/sessions), create and manage KYC sessions.
+- [Error codes](/docs/error-codes), full reference for auth-related errors.

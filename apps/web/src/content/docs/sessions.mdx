@@ -1,0 +1,160 @@
+---
+title: Sessions
+description: Create, monitor, and cancel KYC verification sessions, the unit of work behind every Crivacy credential.
+lastUpdated: '2026-05-24'
+---
+
+## What is a session?
+
+A **session** is a single end-to-end run of the KYC verification pipeline for one user. It is the unit of work the firm creates against Crivacy: one session per user-per-verification-attempt.
+
+Internally a session is a row in `kyc_sessions` and is backed by one (or two, for enhanced KYC) verification flows at Crivacy's identity vendor. The firm only sees the Crivacy-side handles, the vendor wire is encapsulated.
+
+Sessions are the only object the firm controls directly through the REST API. Credentials are derived **from** sessions automatically after the verification reaches a terminal `approved` state.
+
+## Lifecycle
+
+A session progresses through one or more of the following states. The status is exposed on every read response.
+
+| State | Meaning |
+|---|---|
+| `pending` | Session created. The user has not opened the verification URL yet. |
+| `in_progress` | The user has opened the verification URL and is actively submitting documents / selfie. |
+| `in_review` | The vendor has received the submission and is running checks (manual or automated). |
+| `identity_approved` | (Enhanced only) Identity phase passed. The user must now complete the address phase. |
+| `address_in_progress` | (Enhanced only) User is submitting proof-of-address documents. |
+| `approved` | **Terminal, success.** The credential is minted to Sepolia; a `credential.created` webhook follows. |
+| `rejected` | **Terminal, failure.** Vendor declined the submission. The decline reason is exposed via the session detail endpoint. |
+| `resubmission_pending` | Vendor requested the user re-submit one or more documents. The session remains active. |
+| `expired` | **Terminal.** The user did not complete the flow before the 24-hour `expiresAt` deadline. |
+| `kyc_expired` | **Terminal.** The vendor marked the underlying KYC run as expired (regulatory hold or stale documents). |
+| `revoked` | **Terminal.** Cancelled by the firm via `DELETE /api/v1/sessions/:id`, or revoked by Crivacy as part of an upstream credential revocation. |
+
+The progression is monotonic: a session never goes backwards from a terminal state. The four terminal states (`approved` / `rejected` / `expired` / `revoked`) are the only ones for which the firm should not expect further updates.
+
+## Create a session
+
+```bash
+curl -X POST https://app.crivacy.io/api/v1/sessions \
+  -H "x-api-key: crv_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userRef": "user_8x7k2m",
+    "level": "basic",
+    "redirectUrl": "https://yourapp.com/kyc/return",
+    "language": "en",
+    "metadata": { "tier": "premium" }
+  }'
+```
+
+**Request fields**:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `userRef` | string | ✅ | Firm-side opaque identifier for the user. Anything stable that the firm can resolve back to its own user. |
+| `level` | `basic` \| `enhanced` |   | Verification depth. Defaults to `basic` (identity only). `enhanced` runs identity + proof-of-address. |
+| `redirectUrl` | https URL |   | Where the vendor returns the user after they finish. Defaults to the firm's dashboard-configured return URL. |
+| `language` | BCP-47 |   | UI language hint (`en`, `tr`, `de-CH`, …). Falls back to the vendor default. |
+| `metadata` | object |   | Free-form key-value bag the firm can stash on the session. Echoed back on read. |
+
+**One active session per `(userRef, workflow)` pair.** Creating a second session for the same user while one is still non-terminal returns **HTTP 409** with `code: "conflict"`. Cancel the existing session first (`DELETE /api/v1/sessions/:id`) or wait for it to reach a terminal state.
+
+**Response (HTTP 201)**:
+
+```json
+{
+  "id": "ses_01j8r3y...",
+  "firmId": "firm_...",
+  "userRef": "user_8x7k2m",
+  "status": "pending",
+  "level": "basic",
+  "workflow": "identity",
+  "verificationUrl": "https://verify.didit.me/session/qb5cM0c7uEdX",
+  "expiresAt": "2026-05-25T01:23:45.000Z",
+  "createdAt": "2026-05-24T01:23:45.000Z"
+}
+```
+
+Redirect the user to `verificationUrl`, that is the entry point for the vendor-hosted flow.
+
+## Get a session
+
+```bash
+curl https://app.crivacy.io/api/v1/sessions/ses_01j8r3y... \
+  -H "x-api-key: crv_live_..."
+```
+
+Returns the session in detail form, including any phases (identity / address) currently in progress for enhanced sessions, the current status, and timestamps. Use this when polling, or when reacting to a `kyc.session.*` webhook that only carries the session id.
+
+## List sessions
+
+```bash
+curl 'https://app.crivacy.io/api/v1/sessions?status=approved&limit=50' \
+  -H "x-api-key: crv_live_..."
+```
+
+**Query parameters**:
+
+| Param | Description |
+|---|---|
+| `status` | Filter by status (e.g. `pending`, `in_review`, `approved`). |
+| `userRef` | Restrict to one user. |
+| `createdAfter` / `createdBefore` | ISO 8601 timestamps. |
+| `limit` | Page size, max 100. Defaults to 25. |
+| `cursor` | Opaque pagination cursor from a previous response. |
+
+Returns `{ data: SessionSummary[], pagination: { nextCursor } }`. Summary form (id / status / level / timestamps), not detail, use `GET /sessions/:id` for the full record.
+
+## Cancel a session
+
+```bash
+curl -X DELETE https://app.crivacy.io/api/v1/sessions/ses_01j8r3y... \
+  -H "x-api-key: crv_live_..."
+```
+
+Marks a non-terminal session as `revoked`. **Idempotent**, calling DELETE on a session that is already terminal (`approved` / `rejected` / `expired` / `revoked`) returns **HTTP 204** without state change.
+
+Use this to free up the `one active session per user` slot if the user abandoned the flow, or to invalidate a session that was created in error.
+
+## Webhook events
+
+Sessions emit the following events to your registered webhook endpoints (configure them from the dashboard → Webhooks):
+
+| Event | Triggers on |
+|---|---|
+| `kyc.session.created` | Session insert (the firm just got an HTTP 201). |
+| `kyc.session.approved` | Status reached `approved`; a `credential.created` event follows once the on-chain mint settles. |
+| `kyc.session.rejected` | Status reached `rejected`. Decline reason on the session detail. |
+| `kyc.session.kyc_expired` | Vendor declared the underlying KYC run expired. |
+| `kyc.status_changed` | Any other intermediate transition the firm subscribed to. |
+
+Webhook payloads carry the `KycSessionWebhookPayload` shape: `sessionId`, `userRef`, `workflow`, `level`, `verificationUrl`, `expiresAt`, `createdAt`. See [Webhooks](/docs/webhooks) for delivery semantics (signatures, retry policy, idempotency).
+
+## Identity-only (`basic`) vs identity + address (`enhanced`)
+
+| Aspect | `basic` | `enhanced` |
+|---|---|---|
+| Phases | identity | identity → address |
+| Vendor flows backing the session | 1 | 2 (chained, the second auto-starts after identity is approved) |
+| Resulting credential level on Sepolia | `Basic` | `Enhanced` |
+| KycNFT eligibility | No | Yes (Crivacy policy, Enhanced-only soulbound showcase NFT; the `KycNFT` template itself has no level gate in its `ensure` clause, the per-level mint decision lives in the Crivacy backend) |
+| Status path | `pending → in_progress → in_review → approved` | adds `→ identity_approved → address_in_progress` before `approved` |
+
+The phase split is internal, the firm always sees a single session id with a single status field that reflects the currently-running phase.
+
+## Scopes & rate limits
+
+| Endpoint | Required scope |
+|---|---|
+| `POST /api/v1/sessions` | `kyc:create` |
+| `GET /api/v1/sessions` | `kyc:read` |
+| `GET /api/v1/sessions/:id` | `kyc:read` |
+| `DELETE /api/v1/sessions/:id` | `kyc:create` |
+
+See [Authentication → Scopes](/docs/authentication#scopes) for the full scope catalog and [Rate limits](/docs/rate-limits) for the per-tier request budget that applies to session endpoints.
+
+## Related
+
+- [Credentials](/docs/credentials), what a session produces on successful completion.
+- [Webhooks](/docs/webhooks), how to subscribe to session-lifecycle events.
+- [Error codes](/docs/error-codes), the full code catalog including `conflict`, `not_found`, and the vendor-availability errors a session create can surface.

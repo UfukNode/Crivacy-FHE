@@ -1,0 +1,189 @@
+---
+title: API Reference
+description: Overview of the Crivacy KYC REST API, base URL, authentication, content types, and links to the full OpenAPI specification.
+lastUpdated: '2026-04-12'
+---
+
+## Base URL
+
+All API requests should be made to:
+
+```
+https://api.crivacy.io/api/v1
+```
+
+All endpoints use HTTPS. Plain HTTP requests are rejected.
+
+---
+
+## Authentication
+
+Every request to a non-public endpoint must include your API key in the `x-api-key` header:
+
+```curl
+curl https://api.crivacy.io/api/v1/sessions \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..."
+```
+
+See the [Authentication guide](/docs/authentication) for details on key formats, scopes, and security best practices.
+
+---
+
+## Content type
+
+All request and response bodies use JSON:
+
+- Set `Content-Type: application/json` on requests with a body.
+- Responses always return `Content-Type: application/json`.
+
+---
+
+## Request IDs
+
+Every API response includes an `X-Request-Id` header containing a unique identifier for the request:
+
+```
+X-Request-Id: req_7k8l9m0n1o2p
+```
+
+Include this ID when contacting support about a specific request. It helps us locate the relevant logs and traces.
+
+---
+
+## Pagination
+
+List endpoints use **cursor-based pagination**:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cursor` | string | Opaque cursor from a previous response's `pagination.next_cursor`. Omit for the first page. |
+| `limit` | integer | Number of items per page. Default: 20. Maximum: 100. |
+
+### Response format
+
+```json
+{
+  "data": [ ... ],
+  "pagination": {
+    "next_cursor": "eyJpZCI6InNlc18xMjM0In0",
+    "has_more": true
+  }
+}
+```
+
+When `has_more` is `false`, you have reached the last page and `next_cursor` will be `null`.
+
+---
+
+## Endpoint overview
+
+### Public endpoints (no authentication)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/health` | Liveness check |
+| `GET` | `/api/v1/status` | Component status |
+
+### KYC sessions (scope: `kyc:create`, `kyc:read`)
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| `POST` | `/api/v1/sessions` | `kyc:create` | Create a new KYC session |
+| `GET` | `/api/v1/sessions` | `kyc:read` | List sessions (paginated) |
+| `GET` | `/api/v1/sessions/:id` | `kyc:read` | Get session by ID |
+| `DELETE` | `/api/v1/sessions/:id` | `kyc:create` | Cancel a pending session |
+
+### Credentials (scope: `kyc:read`, `kyc:verify`)
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| `GET` | `/api/v1/credentials/:userRef` | `kyc:read` | Get credential by user reference |
+| `POST` | `/api/v1/credentials/verify` | `kyc:verify` | Verify a disclosure blob |
+| `GET` | `/api/v1/credentials/:userRef/history` | `kyc:read` | Get credential audit history |
+
+### Webhooks (scope: `webhooks:manage`)
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| `GET` | `/api/v1/webhooks` | `webhooks:manage` | List webhook endpoints |
+| `POST` | `/api/v1/webhooks` | `webhooks:manage` | Register a new endpoint |
+| `GET` | `/api/v1/webhooks/:id` | `webhooks:manage` | Get endpoint details |
+| `PATCH` | `/api/v1/webhooks/:id` | `webhooks:manage` | Update endpoint |
+| `DELETE` | `/api/v1/webhooks/:id` | `webhooks:manage` | Delete endpoint |
+| `POST` | `/api/v1/webhooks/:id/test` | `webhooks:manage` | Send a test event |
+| `GET` | `/api/v1/webhooks/:id/deliveries` | `webhooks:manage` | List delivery attempts |
+
+### Usage (scope: `usage:read`)
+
+| Method | Path | Scope | Description |
+|--------|------|-------|-------------|
+| `GET` | `/api/v1/usage` | `usage:read` | Current month's usage |
+| `GET` | `/api/v1/usage/history` | `usage:read` | Monthly usage history |
+| `GET` | `/api/v1/limits` | `usage:read` | Current tier and limits |
+
+---
+
+## Error handling
+
+All errors follow a consistent format:
+
+```json
+{
+  "error": {
+    "code": "error_code_here",
+    "message": "Human-readable description.",
+    "details": {}
+  }
+}
+```
+
+See the [Error codes reference](/docs/error-codes) for the complete list of error codes, HTTP statuses, and handling guidance.
+
+---
+
+## Rate limiting
+
+Every authenticated response includes rate limit headers. See the [Rate limits guide](/docs/rate-limits) for tier details and best practices.
+
+---
+
+## OpenAPI specification
+
+The full API specification is available as an OpenAPI 3.1 document, auto-generated from our Zod validation schemas. This ensures the specification always matches the actual API behavior.
+
+| Format | URL |
+|--------|-----|
+| JSON | [/docs/api/openapi.json](https://api.crivacy.io/docs/api/openapi.json) |
+| YAML | [/docs/api/openapi.yaml](https://api.crivacy.io/docs/api/openapi.yaml) |
+
+You can use the OpenAPI spec to:
+
+- **Generate client SDKs** in any language using [openapi-generator](https://openapi-generator.tech/) or [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen).
+- **Import into Postman** or Insomnia for manual testing.
+- **Validate requests** in your CI pipeline against the spec.
+- **Generate type definitions** for TypeScript, Python, Go, and other languages.
+
+> **Note:** The OpenAPI spec is the authoritative reference for request/response schemas, including all required fields, validation constraints, and enum values. The guides in this documentation section provide context and examples, but the spec is the single source of truth.
+
+---
+
+## SDKs and libraries
+
+Official SDKs are on our roadmap. In the meantime, the REST API works with any HTTP client. The code examples throughout this documentation use standard libraries:
+
+| Language | HTTP client used in examples |
+|----------|------------------------------|
+| cURL | System cURL |
+| JavaScript | `fetch` (built-in) |
+| Python | `requests` |
+| Go | `net/http` |
+
+---
+
+## Support
+
+If you encounter issues with the API:
+
+1. Check the [Error codes reference](/docs/error-codes) and [Rate limits guide](/docs/rate-limits).
+2. Include the `X-Request-Id` header value from the failed response.
+3. Contact support at [support@crivacy.io](mailto:support@crivacy.io) or through the dashboard.

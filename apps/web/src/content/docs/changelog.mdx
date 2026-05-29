@@ -1,0 +1,152 @@
+---
+title: Changelog
+description: Release history for the Crivacy KYC API. Track new features, improvements, and breaking changes.
+lastUpdated: '2026-04-26'
+---
+
+## Overview
+
+This changelog documents all notable changes to the Crivacy KYC API. We follow semantic versioning for the API: major versions indicate breaking changes, minor versions add new features, and patch versions fix bugs.
+
+When a breaking change is planned, we will announce it at least 90 days in advance and provide a migration guide.
+
+---
+
+## FHE credential contract, 2026-05-28
+
+**Encrypted on-chain credentials via Zama FHEVM.** The credential model was rewritten end-to-end onto the `CrivacyKYC` Solidity contract on Sepolia, using [Zama FHEVM](https://docs.zama.ai/fhevm) so the sensitive fields live on chain as ciphertext, not plaintext.
+
+### What changed on-chain
+
+- **New contract**: credentials now live in the `CrivacyKYC` registry contract, keyed by the user's EVM address. A soulbound `CrivacyKycNFT` companion contract is bound per credential.
+- **Encrypted storage**: the sensitive fields (`level`, `humanScore`, `identityVerified`, `livenessVerified`, `addressVerified`, `sanctioned`, and the composite `eligible` verdict) are stored as Zama FHEVM ciphertext handles (`euint8` / `ebool`). The lifecycle metadata (`userRefHash`, `proofHash`, `status`, `validator`, `validUntil`, `issuedAt`, `isActive`) stays plaintext.
+- **ACL-gated decryption**: the operator writes and pays gas; the user owns and decrypts their own fields via the Zama relayer with their wallet; a firm decrypts only the `eligible` handle after the user grants it per-firm ACL access.
+- **Function surface**:
+  - `setCredential(...)`, operator issue / supersede; encrypts the six sensitive inputs in one relayer bundle before writing.
+  - `verify(user)` / `myCredential()`, view the full `CredentialView`; plaintext fields readable by anyone, encrypted handles decrypt only for ACL-holders.
+  - `grantAccess(user, firm, minLevel)` / `revokeAccess(user, firm)`, open or close a firm's decrypt access.
+  - `revokeCredential(user, burnNft)` / `revokeMine()`, revoke; burns the bound soulbound NFT atomically when requested.
+  - `eraseCredential(user)`, GDPR erasure of the on-chain row.
+
+### What changed off-chain
+
+- **Firm webhook events**: `credential.updated` and `credential.expired` were added to the `WebhookEventType` enum. Subscribers should treat `credential.updated` as a hint to discard cached values and re-read the credential from chain.
+- **OAuth `credential` companion scope**: the claim set now ships the on-chain pointer (`fhe_kyc_user_address` + `fhe_kyc_contract`) so firms read the credential straight from the contract.
+- **SDK** (`@crivacy/js-sdk`): `verifyDisclosure()` reads the `CrivacyKYC` contract's `verify(user)` view with your own viem client, returning the plaintext lifecycle in the clear and leaving the encrypted handles for the granted firm to decrypt via the Zama SDK.
+
+### Backward compatibility
+
+- **No live user data**: the credential contract went live with this deployment; no real customer credentials predated the FHE model.
+
+---
+
+## Docs, 2026-04-26
+
+**Multi-language SDK documentation (roadmap).** The Getting Started guide and OAuth integration guide ship raw HTTP samples (cURL) plus a TypeScript/JavaScript reference today. Python and additional language SDKs (PHP, Java, .NET, Go, Ruby) are planned deliverables of the credential development fund, see Milestone M3 (Python SDK port) and the M3+ continuation roadmap in the [proposal](https://github.com/Farukest/credential/blob/main/proposals/credential-sdk.md). Until they ship, the tabbed code blocks render the integration shape for each stack against the public REST endpoints documented below.
+
+The dashboard "Integration Quick Start" drawer reads from the same template builder, so the snippet you see in the dashboard is byte-identical to the one in the docs (modulo your real `client_id`).
+
+The currently shipped SDK package is **`@crivacy/js-sdk` on npm**. Planned future language targets are listed in [OAuth / OIDC integration → First-party SDKs](/docs/oauth#first-party-sdks).
+
+Userinfo response documentation now reflects the actual production behaviour: `credential` is a [companion scope](/docs/getting-started#companion-scope) auto-attached to any request that includes a `kyc*` scope, so every verification disclosure ships with the on-chain reference (`credential_proof_hash`, `credential_contract_id`, `fhe_kyc_user_address`, `fhe_kyc_contract`) needed for independent on-chain verification. The Step 3 response example in Getting Started has been updated to show the full claim set.
+
+---
+
+## v1.0.0, 2026-04-12
+
+**Initial public release of the Crivacy KYC API.**
+
+This release introduces the complete B2B KYC-as-a-Service platform, backed by the Sepolia for tamper-evident, re-usable identity credentials.
+
+### KYC session management
+
+- **Create sessions** (`POST /api/v1/sessions`) with support for two-phase verification: Phase 1 (identity, government ID, liveness detection, face match) and Phase 2 (address, proof-of-address document upload).
+- **Session lifecycle:** `pending` -> `in_progress` -> `approved` / `declined` / `expired`.
+- **Fetch session status** (`GET /api/v1/sessions/:id`) and **list sessions** with filtering by status, user reference, and phase.
+- **Cancel pending sessions** (`DELETE /api/v1/sessions/:id`).
+- Custom redirect URLs and per-session webhook URL overrides.
+- Metadata support for attaching arbitrary key-value pairs to sessions.
+- Locale support for the verification UI (`en`, `tr`, `de`, and more).
+
+### chain-backed credential lifecycle
+
+- **Re-usable credentials**, verify once, use everywhere. A single verification produces an on-chain credential that can be disclosed to any participating firm.
+- **Credential fields:** proof hash, verification level (basic/full), human score, identity/liveness/address verification flags, validator type, and expiration date.
+- **Fetch credentials** (`GET /api/v1/credentials/:userRef`) with disclosure blob for third-party verification.
+- **Verify disclosure** (`POST /api/v1/credentials/verify`), third-party firms can cryptographically verify a credential without repeating the KYC process.
+- **Credential history** (`GET /api/v1/credentials/:userRef/history`), full audit trail of credential events.
+- CrivacyKYC contract backing with `KYCCredential` template: `Verify` (non-consuming), `RevokeCredential`, and `MigrateValidator` choices.
+- Credential revocation is recorded on-chain for tamper evidence.
+
+### Webhook delivery with retry
+
+- Register webhook endpoints (`POST /api/v1/webhooks`) with event type filtering.
+- Five event types: `kyc.session.completed`, `kyc.session.expired`, `credential.created`, `credential.verified`, `credential.revoked`.
+- **HMAC-SHA256 signature verification** using Stripe-style `t=<timestamp>,v1=<hex>` format with 5-minute replay protection.
+- **Exponential backoff retry policy:** 7 attempts over approximately 33 hours.
+- **Dead letter queue** for permanently failed deliveries with dashboard visibility.
+- **Circuit breaker:** endpoints auto-disabled after 50+ failures per hour.
+- Test event delivery via `POST /api/v1/webhooks/:id/test`.
+- Delivery attempt history via `GET /api/v1/webhooks/:id/deliveries`.
+- Idempotency via unique event IDs (`X-Crivacy-Event-Id` header).
+
+### Firm dashboard with API key management
+
+- **API key management:** create, rotate (24-hour grace period), and revoke keys.
+- **Two key modes:** `crv_live_*` for production (real on-chain transactions) and `crv_test_*` for sandbox (simulated verification, no quota consumed).
+- **Granular scopes:** `kyc:create`, `kyc:read`, `kyc:verify`, `webhooks:manage`, `usage:read`.
+- Dashboard authentication via email + password + TOTP (two-factor authentication).
+- Usage statistics and quota monitoring.
+- Audit log with full history of all firm actions.
+
+### Rate limiting with 4 tiers
+
+- **Free:** 1 req/s (5 burst), 1K monthly quota, 1 webhook endpoint.
+- **Starter:** 10 req/s (30 burst), 100K monthly quota, 5 webhook endpoints.
+- **Pro:** 100 req/s (300 burst), 1M monthly quota, 50 webhook endpoints.
+- **Enterprise:** Custom limits, unlimited quota, unlimited webhook endpoints.
+- Token bucket algorithm with per-key enforcement.
+- Standard response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-Quota-Limit`, `X-Quota-Remaining`, `Retry-After`.
+- Instant tier upgrades with token bucket reconciliation.
+
+### Usage and limits endpoints
+
+- **Current usage** (`GET /api/v1/usage`), requests used and remaining for the current month.
+- **Usage history** (`GET /api/v1/usage/history`), monthly usage breakdown.
+- **Current limits** (`GET /api/v1/limits`), tier details, rate limit config, quota status, webhook endpoint allowance.
+
+### Health and status
+
+- **Health check** (`GET /api/v1/health`), liveness probe.
+- **Component status** (`GET /api/v1/status`), per-component health (API, database, Sepolia, webhook delivery).
+
+### API standards
+
+- **Base URL:** `https://api.crivacy.io/api/v1`
+- **Authentication:** `x-api-key` header.
+- **Content type:** `application/json` for all request and response bodies.
+- **Pagination:** Cursor-based with `cursor` and `limit` parameters.
+- **Error format:** Consistent `{ error: { code, message, details } }` structure.
+- **OpenAPI 3.1 specification** auto-generated from Zod schemas (single source of truth).
+- **Structured logging** with request IDs on all responses (`X-Request-Id` header).
+
+---
+
+## Upcoming
+
+Planned features include:
+
+- **SDK libraries** for Node.js, Python, Go, and Ruby.
+- **Batch verification endpoint** for bulk credential checks.
+- **Webhook filtering** by user reference patterns.
+- **mTLS support** for Enterprise tier API keys.
+- **OpenAPI interactive documentation** with embedded playground.
+
+---
+
+## Versioning policy
+
+- The API version is included in the URL path (`/api/v1/`).
+- Minor additions (new fields, new endpoints) are made within the current version without breaking existing integrations.
+- Breaking changes (removed fields, changed behavior) will increment the major version and maintain the previous version for at least 12 months.
+- Deprecation notices are communicated via the `Sunset` and `Deprecation` HTTP headers on affected endpoints.

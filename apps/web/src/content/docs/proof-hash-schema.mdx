@@ -1,0 +1,151 @@
+---
+title: Proof Hash Schema
+description: Auditor reference, how to reproduce the proof hash on every Crivacy credential from the Didit decision payload.
+---
+
+# Proof hash schema
+
+Every Crivacy credential carries the verification-fields hash as the plaintext `proofHash` field on its `CrivacyKYC` contract row on Sepolia. The hash cryptographically commits to the Didit-returned identity fields at mint time. Auditors, integrating firms, and compliance reviewers can reproduce that hash from the original Didit decision in two SQL queries plus one HTTP call. This page is the canonical specification.
+
+## What Crivacy stores
+
+Crivacy stores **zero raw PII**. Per migration `20260509000000_pii_purge_and_proof_schemas`:
+
+- `customers` table holds account lifecycle data (email / phone / status / kyc level / kyc score) and **no** identity fields.
+- `kyc_credentials_meta` rows carry `proof_hash` (the hex digest), `proof_schema_id` (FK to the spec used), and Didit `kyc_session_id` (pointer for re-fetching the underlying decision).
+- `proof_schemas` is an **append-only** table, `UPDATE` and `DELETE` are blocked by Postgres trigger. Each row pins the `(chain, version)` pair, the canonical field set in lexicographic order, and the algorithm identifier.
+
+The customer's name, date-of-birth, document details, and address live exclusively in Didit. To reproduce a hash you fetch them from Didit's session decision endpoint at audit time.
+
+## Schema versions
+
+### `kyc-v1`
+
+Phase 1 (identity verification) credentials.
+
+| Field | Source on Didit decision | Type |
+|---|---|---|
+| `dateOfBirth` | `decision.kyc.dateOfBirth` | ISO 8601 date string `YYYY-MM-DD` |
+| `documentNumber` | `decision.kyc.documentNumber` | string |
+| `documentType` | `decision.kyc.documentType` | string (`passport` / `id_card` / `driving_license`) |
+| `firstName` | `decision.kyc.firstName` | string |
+| `issuingCountry` | `decision.kyc.issuingCountry` | ISO 3166-1 α-2 |
+| `lastName` | `decision.kyc.lastName` | string |
+| `sessionId` | `decision.session_id` | UUID string |
+| `vendorData` | `decision.vendor_data` | string (JSON-encoded `{type:'customer',customerId,crivacySessionId}`) |
+| `workflowType` | literal `"kyc"` | constant string |
+
+`canonical_algo`: `sortKeys+shortenFloats+sha256`
+
+### `address-v1`
+
+Phase 2 (address verification) credentials, single-workflow form. Pre-Sprint-2 mints only.
+
+| Field | Source on Didit decision | Type |
+|---|---|---|
+| `addressVerified` | `decision.address.addressVerified` | boolean |
+| `country` | `decision.address.country` | ISO 3166-1 α-2 |
+| `documentType` | `decision.address.documentType` | string |
+| `sessionId` | `decision.session_id` | UUID string |
+| `vendorData` | `decision.vendor_data` | string (JSON-encoded) |
+| `workflowType` | literal `"address"` | constant string |
+
+`canonical_algo`: `sortKeys+shortenFloats+sha256`
+
+### Future composite specs
+
+Sprint 2 introduces `kyc+address-v1`, a composite spec where Phase 2's hash input includes Phase 1 KYC fields together with Phase 2 address fields, so the active credential proves the entire verification chain in one self-contained hash. Documentation for that spec is added to this page when the Sprint 2 migration ships.
+
+Additional verification surfaces (wealth, employment, residence, age-only…) will land as new spec rows, each gets a row appended to `proof_schemas`, never an edit of an existing row.
+
+## Canonical algorithm
+
+`sortKeys+shortenFloats+sha256`, the same canonical-JSON pipeline used for Didit webhook signature verification (`apps/web/src/lib/didit/canonical.ts`):
+
+1. `shortenFloats`, JSON numbers that are whole-number floats (`42.0`) are coerced to integers (`42`) before serialization. Matches Python's `int(value) if value % 1 == 0`.
+2. `sortKeys`, every object's keys are emitted in lexicographic ASCII order. Nested objects sort recursively; arrays preserve order.
+3. `JSON.stringify` with no `space` argument, tight separators (`,` and `:`) with no whitespace.
+4. `sha256` over the resulting UTF-8 byte string. Output is hex-encoded, lowercase.
+
+Equivalent Python expression:
+
+```python
+import hashlib, json
+def shorten(v):
+    if isinstance(v, list): return [shorten(x) for x in v]
+    if isinstance(v, dict): return {k: shorten(x) for k, x in v.items()}
+    if isinstance(v, float) and v.is_integer(): return int(v)
+    return v
+
+canonical = json.dumps(shorten(input_dict), sort_keys=True, separators=(",", ":"))
+proof_hash = hashlib.sha256(canonical.encode()).hexdigest()
+```
+
+## Reproducing a hash from a Crivacy credential
+
+Given a `kyc_credentials_meta` row, an auditor reproduces the hash as follows:
+
+```sql
+-- Step 1: read the credential's spec metadata.
+SELECT
+  cm.proof_hash,
+  cm.kyc_session_id,
+  cm.firm_id,
+  cm.user_ref,
+  ps.chain,
+  ps.version,
+  ps.fields_in_order,
+  ps.canonical_algo,
+  ps.source_doc_url
+FROM kyc_credentials_meta cm
+JOIN proof_schemas ps ON ps.id = cm.proof_schema_id
+WHERE cm.chain_contract_id = $1;
+```
+
+```sql
+-- Step 2: read the Didit session pointer (one row, points at Didit).
+-- Note: customer + B2B sessions were unified into a single
+-- `kyc_sessions` table; the prior `customer_kyc_sessions` table was
+-- dropped in migration `Phase H`.
+SELECT didit_session_id
+FROM kyc_sessions
+WHERE id = $1; -- the kyc_session_id from step 1
+```
+
+```bash
+# Step 3: fetch the Didit decision (server-to-server, requires Didit
+# admin role on the Crivacy Didit account).
+curl -H "x-api-key: $DIDIT_API_KEY" \
+  "https://verification.didit.me/v3/session/$DIDIT_SESSION_ID/decision/"
+```
+
+```python
+# Step 4: pluck the fields named in `fields_in_order`, build the
+# input dict in canonical order, and sha256 the canonical JSON.
+import json, hashlib
+
+input_dict = {
+    "dateOfBirth":    decision["kyc"]["dateOfBirth"],
+    "documentNumber": decision["kyc"]["documentNumber"],
+    "documentType":   decision["kyc"]["documentType"],
+    "firstName":      decision["kyc"]["firstName"],
+    "issuingCountry": decision["kyc"]["issuingCountry"],
+    "lastName":       decision["kyc"]["lastName"],
+    "sessionId":      decision["session_id"],
+    "vendorData":     decision["vendor_data"],
+    "workflowType":   "kyc",
+}
+canonical = json.dumps(input_dict, sort_keys=True, separators=(",", ":"))
+reproduced = hashlib.sha256(canonical.encode()).hexdigest()
+
+# Step 5: compare. Match means the on-chain credential commits to
+# exactly the Didit-returned PII for this session.
+assert reproduced == row["proof_hash"]
+```
+
+## Why this design
+
+- **No PII at Crivacy.** The hash commits to the underlying fields, but the fields themselves never enter a Crivacy DB column. Auditors verify by re-fetching from Didit, never by querying Crivacy.
+- **Spec immutability.** `proof_schemas` rows cannot be edited (Postgres trigger). A spec change = a new row with a bumped version. Old credentials' FK still resolves to the original byte-immutable row, so a hash reproduced years from now still finds its exact spec.
+- **Contract shape stable.** Crivacy writes the proof hash into the `CrivacyKYC` contract's plaintext `proofHash` field. New verification surfaces (wealth, employment, …) compose into a new `proof_schemas` row and ship under their own hash keys; the on-chain contract structure never changes. A future cross-firm verifier doesn't need to track contract upgrades to validate Crivacy credentials.
+- **Single source of truth.** The `lib/proof-schemas.ts` module is the SOURCE for inserting new spec rows on worker boot via `seedProofSchemas()`. The DB is the runtime authority, auditors read DB, never code.

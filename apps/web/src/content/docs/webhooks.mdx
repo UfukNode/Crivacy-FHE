@@ -1,0 +1,541 @@
+---
+title: Webhooks
+description: Receive real-time notifications when KYC events occur. Learn how to register endpoints, verify signatures, and handle retries.
+lastUpdated: '2026-04-12'
+---
+
+## Overview
+
+Webhooks allow your application to receive real-time HTTP callbacks when events occur in your Crivacy account. Instead of polling the API, register a webhook endpoint and Crivacy will push event payloads to you.
+
+---
+
+## How webhooks work
+
+1. An event occurs (e.g., a KYC session completes).
+2. Crivacy serializes the event payload as JSON.
+3. Crivacy signs the payload with your endpoint's signing secret.
+4. Crivacy sends a `POST` request to your registered URL with the payload and signature header.
+5. Your server verifies the signature, processes the event, and returns `2xx`.
+6. If delivery fails, Crivacy retries with exponential backoff.
+
+---
+
+## Supported events
+
+The event types Crivacy emits today, grouped by the resource they describe. Everything else, `kyc.session.completed`, `user.created`, etc., was removed during the OAuth-first rewrite and must not be subscribed to (it won't fire).
+
+**Credential lifecycle**
+
+| Event type | Trigger |
+|------------|---------|
+| `credential.created` | A new KYC credential was issued after successful verification (`setCredential` on the `CrivacyKYC` contract). |
+| `credential.verified` | A third-party firm read and verified an existing credential straight from the contract on chain. |
+| `credential.revoked` | A credential was revoked (fraud cascade, user voluntary via `revokeMine`, issuer compliance via `revokeCredential`, or administrative action). |
+| `credential.updated` | A credential's encrypted fields were refreshed by the issuer (`setCredential` re-run, vendor re-verification, validity-window extension, non-level change). The fields are overwritten in place under the same wallet key. |
+| `credential.expired` | A credential's `valid_until` timestamp passed. The contract's `isActive` flag reads false past the window; subscribers should drop any cached verified state. Pairs with `credential.revoked` when the expiry triggers a Didit `kyc_expired` flow. |
+| `credential.upgraded` | A customer's credential level advanced (basic → enhanced), emitted in addition to `credential.created` / `credential.revoked` when the upgrade went through the revoke + remint pattern. |
+
+**KYC session lifecycle**
+
+| Event type | Trigger |
+|------------|---------|
+| `kyc.session.created` | A new verification session was opened for a customer. |
+| `kyc.session.approved` | The upstream KYC provider approved the session. Credential issuance follows. |
+| `kyc.session.rejected` | The upstream KYC provider rejected the session. |
+| `kyc.session.in_review` | Compliance flagged the session for manual review (24-48h SLA). No user action needed; the next event will be `approved`, `rejected`, or `resubmission_required`. |
+| `kyc.session.resubmission_required` | Compliance asked the user to redo specific verification steps. The same Didit session resumes from its original URL, only the flagged steps repeat. |
+| `kyc.session.kyc_expired` | A previously-approved verification crossed the Didit expiration policy. The on-chain credential is revoked in parallel (a `credential.revoked` event also fires). Drop any cached verified state for the user. |
+
+**OAuth consent lifecycle**
+
+| Event type | Trigger |
+|------------|---------|
+| `oauth.consent.granted` | The customer approved your OAuth client on the Crivacy consent screen. |
+| `oauth.consent.revoked` | The customer revoked your OAuth client from their Connected Apps page. Drop cached tokens for that user. |
+
+### Event payload structure
+
+Every webhook delivery has the same envelope format:
+
+```json
+{
+  "id": "evt_a1b2c3d4e5f6",
+  "type": "credential.created",
+  "created_at": "2026-04-12T12:05:00Z",
+  "firmId": "firm_abc123",
+  "sessionId": "ses_9f8e7d6c5b4a3e2d",
+  "data": {
+    "credential_id": "cred_x7y8z9w6",
+    "user_ref": "user_8x7k2m",
+    "level": "enhanced",
+    "valid_until": "2027-04-12T00:00:00Z",
+    "chain_contract_id": "0x91f410ffcf51abd0389890968b243bb9a32eb94b..."
+  }
+}
+```
+
+The `data` field varies by event type:
+
+<h3 id="event-kyc-session-created">`kyc.session.created`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "workflow": "identity",
+  "level": "basic",
+  "verification_url": "https://verification.didit.me/session/..."
+}
+```
+
+<h3 id="event-kyc-session-approved">`kyc.session.approved`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "phase": "identity",
+  "credential_id": "cred_x7y8z9w6"
+}
+```
+
+<h3 id="event-kyc-session-rejected">`kyc.session.rejected`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "phase": "identity",
+  "reason": "document_invalid"
+}
+```
+
+<h3 id="event-kyc-session-in-review">`kyc.session.in_review`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "workflow": "identity",
+  "in_review_at": "2026-04-19T10:31:18Z"
+}
+```
+
+<h3 id="event-kyc-session-resubmission-required">`kyc.session.resubmission_required`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "workflow": "identity",
+  "requested_at": "2026-04-19T10:31:18Z",
+  "nodes_to_resubmit": [
+    { "feature": "OCR", "reason": "Document photo unclear" },
+    { "feature": "LIVENESS", "reason": "Face not detected" }
+  ],
+  "resume_url": "https://verification.didit.me/session/..."
+}
+```
+
+The `resume_url` lands the user back on the original Didit session, only the flagged steps run again. Surface it in your UI so users don't have to navigate back through your onboarding.
+
+<h3 id="event-kyc-session-kyc-expired">`kyc.session.kyc_expired`</h3>
+
+```json
+{
+  "session_id": "ses_9f8e7d6c5b4a3e2d",
+  "user_ref": "user_8x7k2m",
+  "workflow": "identity",
+  "expired_at": "2027-04-19T10:31:18Z"
+}
+```
+
+Pairs with `credential.revoked`, the on-chain credential is revoked in the same pipeline, so subscribers to either event get notified. Subscribe to both if you key off both session lifecycle (UX prompts) and credential lifecycle (cached verified state).
+
+<h3 id="event-credential-created">`credential.created`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "level": "enhanced",
+  "valid_until": "2027-04-12T00:00:00Z",
+  "chain_contract_id": "0x91f410ffcf51abd0389890968b243bb9a32eb94b..."
+}
+```
+
+<h3 id="event-credential-verified">`credential.verified`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "verifier_firm_id": "firm_abc123",
+  "result": true
+}
+```
+
+<h3 id="event-credential-revoked">`credential.revoked`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "reason": "fraud_detected",
+  "revoked_at": "2026-04-15T08:30:00Z"
+}
+```
+
+<h3 id="event-credential-upgraded">`credential.upgraded`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "previous_level": "basic",
+  "new_level": "enhanced",
+  "new_score": 87
+}
+```
+
+<h3 id="event-credential-updated">`credential.updated`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "previous_chain_contract_id": "0x3a7c...",
+  "new_chain_contract_id": "0xb3d8...",
+  "reason": "vendor_rereview_humanscore_raised",
+  "updated_at": "2026-05-28T14:46:18Z"
+}
+```
+
+A `setCredential` re-run overwrites the encrypted fields in place under the same wallet key and emits a new transaction. Subscribers should swap the cached `chain_contract_id` and discard any cached values derived from the previous fields (`humanScore`, `validUntil`, `addressVerified`, etc.), re-read from `GET /api/v1/credentials/:userRef` or straight from the contract.
+
+<h3 id="event-credential-expired">`credential.expired`</h3>
+
+```json
+{
+  "credential_id": "cred_x7y8z9w6",
+  "user_ref": "user_8x7k2m",
+  "expired_at": "2027-04-12T00:00:00Z"
+}
+```
+
+Fired when the credential's `valid_until` timestamp passes. The contract's `isActive` flag reads false past the window (the row itself stays on chain until explicitly revoked or erased), subscribers should drop any cached "verified" state for the user and prompt re-verification before granting access. Pairs with `credential.revoked` when the expiry triggers a Didit `kyc_expired` cascade.
+
+<h3 id="event-oauth-consent-granted">`oauth.consent.granted`</h3>
+
+```json
+{
+  "consent_id": "cns_q7r8s9t0",
+  "client_id": "crv_oauth_live_xxxxxxxxxxxxx",
+  "user_ref": "user_8x7k2m",
+  "scope": "openid kyc"
+}
+```
+
+<h3 id="event-oauth-consent-revoked">`oauth.consent.revoked`</h3>
+
+```json
+{
+  "consent_id": "cns_q7r8s9t0",
+  "client_id": "crv_oauth_live_xxxxxxxxxxxxx",
+  "user_ref": "user_8x7k2m",
+  "scope": "openid kyc",
+  "revoked_at": "2026-05-14T17:50:11Z"
+}
+```
+
+---
+
+## Registering a webhook endpoint
+
+**Endpoint:** `POST /api/v1/webhooks`
+
+**Required scope:** `webhooks:manage`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | Yes | The HTTPS URL to receive webhook deliveries. |
+| `events` | string[] | Yes | Array of event types to subscribe to. Must be a non-empty subset of the canonical list above. Unknown event names are rejected by the schema layer. |
+| `description` | string | No | Human-readable label for the endpoint. |
+
+### cURL
+
+```curl
+curl -X POST https://api.crivacy.io/api/v1/webhooks \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..." \
+  -d '{
+    "url": "https://yourapp.com/api/webhooks/crivacy",
+    "events": ["kyc.session.approved", "credential.created", "credential.revoked"],
+    "description": "Production KYC handler"
+  }'
+```
+
+### Response (201 Created)
+
+```json
+{
+  "id": "whk_m3n4o5p6",
+  "url": "https://yourapp.com/api/webhooks/crivacy",
+  "events": ["kyc.session.approved", "credential.created", "credential.revoked"],
+  "description": "Production KYC handler",
+  "signing_secret": "whsec_q7r8s9t0u1v2w3x4y5z6...",
+  "status": "active",
+  "created_at": "2026-04-12T12:00:00Z"
+}
+```
+
+> **Note:** The `signing_secret` is shown only once. Store it securely, you will need it to verify webhook signatures.
+
+---
+
+## Managing webhook endpoints
+
+| Operation | Method | Endpoint |
+|-----------|--------|----------|
+| List all | `GET` | `/api/v1/webhooks` |
+| Get one | `GET` | `/api/v1/webhooks/:id` |
+| Update | `PATCH` | `/api/v1/webhooks/:id` |
+| Delete | `DELETE` | `/api/v1/webhooks/:id` |
+| Send test event | `POST` | `/api/v1/webhooks/:id/test` |
+| View delivery attempts | `GET` | `/api/v1/webhooks/:id/deliveries` |
+
+### Updating an endpoint
+
+```curl
+curl -X PATCH https://api.crivacy.io/api/v1/webhooks/whk_m3n4o5p6 \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..." \
+  -d '{
+    "events": [
+      "credential.created",
+      "credential.verified",
+      "credential.revoked",
+      "credential.expired"
+    ],
+    "description": "All credential events"
+  }'
+```
+
+### Sending a test event
+
+```curl
+curl -X POST https://api.crivacy.io/api/v1/webhooks/whk_m3n4o5p6/test \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..."
+```
+
+This sends a synthetic event (one of the types your endpoint is subscribed to, defaulting to `credential.created`) so you can verify your handler works correctly. The test event carries a `data.test = true` flag so your consumer can distinguish it from real traffic.
+
+---
+
+## Signature verification
+
+Every webhook delivery includes a signature header:
+
+```
+X-Crivacy-Signature: t=1744459500,v1=5d41402abc4b2a76b9719d911017c592ae3b6e20a425ac3b8502054f...
+```
+
+The signature has two parts:
+
+- `t`, Unix timestamp (seconds) when the payload was signed.
+- `v1`, HMAC-SHA256 hex digest of the signed content.
+
+### Verification algorithm
+
+1. Extract `t` and `v1` from the header.
+2. Construct the signed content: `${t}.${raw_request_body}` (the timestamp, a literal period, and the raw JSON body).
+3. Compute `HMAC-SHA256(signing_secret, signed_content)`.
+4. Compare the computed HMAC to `v1` using a constant-time comparison.
+5. Check that `t` is within 5 minutes of the current time to prevent replay attacks.
+
+### Node.js example
+
+```javascript
+import crypto from 'node:crypto';
+
+function verifyWebhookSignature(rawBody, signatureHeader, secret) {
+  const parts = Object.fromEntries(
+    signatureHeader.split(',').map((part) => {
+      const [key, value] = part.split('=');
+      return [key, value];
+    })
+  );
+
+  const timestamp = parts.t;
+  const receivedHmac = parts.v1;
+
+  // Reject if timestamp is older than 5 minutes
+  const age = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
+  if (Math.abs(age) > 300) {
+    throw new Error('Webhook timestamp too old or too far in the future');
+  }
+
+  const expectedHmac = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+
+  const isValid = crypto.timingSafeEqual(
+    Buffer.from(receivedHmac, 'hex'),
+    Buffer.from(expectedHmac, 'hex')
+  );
+
+  if (!isValid) {
+    throw new Error('Invalid webhook signature');
+  }
+
+  return JSON.parse(rawBody);
+}
+
+// Usage in Express
+app.post('/webhooks/crivacy', express.raw({ type: 'application/json' }), (req, res) => {
+  try {
+    const event = verifyWebhookSignature(
+      req.body.toString(),
+      req.headers['x-crivacy-signature'],
+      process.env.CRIVACY_WEBHOOK_SECRET
+    );
+    // Process event...
+    res.status(200).json({ received: true });
+  } catch (err) {
+    res.status(401).json({ error: err.message });
+  }
+});
+```
+
+### Python example
+
+```python
+import hmac
+import hashlib
+import time
+import json
+
+def verify_webhook_signature(raw_body: bytes, signature_header: str, secret: str) -> dict:
+    parts = dict(part.split("=", 1) for part in signature_header.split(","))
+
+    timestamp = parts["t"]
+    received_hmac = parts["v1"]
+
+    # Reject if timestamp is older than 5 minutes
+    age = abs(int(time.time()) - int(timestamp))
+    if age > 300:
+        raise ValueError("Webhook timestamp too old or too far in the future")
+
+    signed_content = f"{timestamp}.{raw_body.decode('utf-8')}"
+    expected_hmac = hmac.new(
+        secret.encode("utf-8"),
+        signed_content.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(received_hmac, expected_hmac):
+        raise ValueError("Invalid webhook signature")
+
+    return json.loads(raw_body)
+
+
+# Usage in Flask
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route("/webhooks/crivacy", methods=["POST"])
+def handle_webhook():
+    try:
+        event = verify_webhook_signature(
+            request.data,
+            request.headers["X-Crivacy-Signature"],
+            os.environ["CRIVACY_WEBHOOK_SECRET"],
+        )
+        # Process event...
+        return {"received": True}, 200
+    except ValueError as e:
+        return {"error": str(e)}, 401
+```
+
+---
+
+## Retry policy
+
+If your endpoint does not return a `2xx` status code within **30 seconds**, the delivery is considered failed and will be retried.
+
+| Attempt | Delay after failure |
+|---------|---------------------|
+| 1 | Immediate |
+| 2 | 10 seconds |
+| 3 | 1 minute |
+| 4 | 5 minutes |
+| 5 | 30 minutes |
+| 6 | 2 hours |
+| 7 | 6 hours |
+| (final) | 24 hours |
+
+After 7 failed attempts (spanning approximately 33 hours), the delivery is moved to the **dead letter queue** and marked as permanently failed.
+
+---
+
+## Dead letter queue
+
+Failed deliveries are visible in your dashboard under **Webhooks > Deliveries**. You can:
+
+- Inspect the payload, response status, and error message for each attempt.
+- Manually **replay** a failed delivery via the dashboard or API (`POST /api/internal/webhooks/replay/:id`).
+- Set up alerts to be notified when deliveries fail.
+
+> **Note:** If an endpoint fails more than 50 deliveries within one hour, it is automatically **disabled** as a circuit breaker. You will receive an alert and can re-enable it from the dashboard after fixing the issue.
+
+---
+
+## Idempotency
+
+Each event has a unique `id` (e.g., `evt_a1b2c3d4e5f6`). The same event ID may be delivered more than once due to retries. Your handler should be idempotent, processing the same event twice should produce the same result.
+
+A common pattern is to store processed event IDs:
+
+```javascript
+app.post('/webhooks/crivacy', async (req, res) => {
+  const event = verifyWebhookSignature(/* ... */);
+
+  // Check if already processed
+  const exists = await db.webhookEvent.findUnique({ where: { eventId: event.id } });
+  if (exists) {
+    return res.status(200).json({ received: true, duplicate: true });
+  }
+
+  // Process and record
+  await db.webhookEvent.create({ data: { eventId: event.id, processedAt: new Date() } });
+  await handleEvent(event);
+
+  res.status(200).json({ received: true });
+});
+```
+
+The event ID is also sent in the `X-Crivacy-Event-Id` header for convenience.
+
+---
+
+## Webhook endpoint limits by tier
+
+| Tier | Max webhook endpoints |
+|------|-----------------------|
+| Free | 1 |
+| Starter | 5 |
+| Pro | 50 |
+| Enterprise | Unlimited |
+
+---
+
+## Next steps
+
+- [Getting started](/docs/getting-started), set up your first integration.
+- [Error codes](/docs/error-codes), understand webhook-related errors.
+- [Rate limits](/docs/rate-limits), tier limits for webhook endpoints.

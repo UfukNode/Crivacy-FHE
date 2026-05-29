@@ -1,0 +1,183 @@
+---
+title: Roles & Permissions
+description: How Crivacy enforces role-based access control (RBAC) across firm dashboards and the admin panel, preset roles, permission codes, and how to reason about access.
+lastUpdated: '2026-04-23'
+---
+
+## Overview
+
+Crivacy enforces **permission-based RBAC** on every internal API call. Each role carries a fixed set of permission codes; each endpoint declares the permission it requires. When a caller's effective permission set is missing the code, the server returns `403 permission_denied` regardless of hierarchy.
+
+Two portals, one mechanism:
+
+- **Firm dashboard** (`/api/internal/*`), team members of a firm. Four preset roles.
+- **Admin panel** (`/api/internal/admin/*`), Crivacy platform operators. Three preset roles.
+
+Customer endpoints (`/api/customer/*`) are **identity-based**, not role-based. Each customer acts on their own data; RBAC does not apply.
+
+---
+
+## How enforcement works
+
+Three layers fire in order on every request:
+
+| Layer | Runs in | Role |
+|-------|---------|------|
+| **Middleware permission check** | `dashboardRoute` / `adminRoute` | Reads `user_roles` → `roles` → `role_permissions` → `permissions`, compares to the route's declared code, throws `RbacError('permission_denied')` on miss. |
+| **Handler target guard** | Per-handler | For actions with an `.own` / `.any` split (e.g. `api_key.rotate.own` vs `.any`), the handler branches on whether the caller holds `.any` and enforces creator ownership otherwise. |
+| **UI gate** | Client (SWR + hooks) | Sidebar items and action buttons are hidden for users lacking the code. Cosmetic, the real security boundary is the middleware. |
+
+A request that bypasses the UI (curl, devtools) still hits the middleware and loses at the first layer.
+
+---
+
+## Preset roles
+
+### Firm dashboard (`user_type = 'firm_user'`)
+
+| Role | Intent | Can do |
+|------|--------|--------|
+| **Viewer** | Audit / observer (compliance officer, finance reviewer) | Read-only across firm resources, shared ticket inbox visibility, self-profile management. No resource mutations. No playground execution. |
+| **Member** | Regular team member | Viewer plus: create API keys, create/update webhooks, replay deliveries, close own tickets, execute Playground requests. Can rotate/revoke **own** API keys only. |
+| **Admin** | Firm admin | Member plus: firm settings, team invite/role change/remove, any-resource mutations (rotate any API key, delete webhook, full OAuth client CRUD), firm-wide ticket oversight, audit log access. Cannot delete firm or transfer ownership. |
+| **Owner** | Firm founder | Admin plus irreversible firm-level operations (soft-delete firm, transfer ownership). **At least one Owner must exist per firm**, the handler blocks the demote/remove path that would leave a firm ownerless. |
+
+### Admin panel (`user_type = 'admin_user'`)
+
+| Role | Intent | Can do |
+|------|--------|--------|
+| **Support** | Crivacy customer support staff | Read firms + customers, full ticket workflow (take over, assign, internal notes, participants), blacklist visibility, audit log visibility. Cannot mutate firms or ban customers. |
+| **Admin** | Platform admin | Support plus: firm create/update/suspend, customer ban, blacklist management, status page management, system metrics, ticket categories, role assignment. Cannot assign Superadmin (handler guard). |
+| **Superadmin** | Full platform control | Admin plus irreversible operations (customer unban, firm restore), RBAC meta (role/permission management), and admin user lifecycle (create/update/delete/TOTP reset). |
+
+---
+
+## Permission code reference
+
+Permission codes follow `{domain}.{subdomain?}.{action}[.{scope?}]`:
+
+- `{domain}` groups related permissions (`firm`, `api_key`, `webhook`, `oauth_client`, `ticket`, `audit`, `usage`, `playground`, `profile`, `notifications`, `admin`).
+- `.own` / `.any` scope suffix distinguishes "creator-only" vs "unrestricted" variants (see `api_key.rotate.own` vs `api_key.rotate.any`).
+- `admin.*` prefix = admin panel only (never granted to firm roles).
+
+The full catalogue lives at `apps/web/src/lib/rbac/permissions.ts`. Highlights:
+
+### Firm-side
+
+- **API keys**: `read`, `create`, `rotate.own`, `rotate.any`, `revoke.own`, `revoke.any`
+- **Webhooks**: `read`, `create`, `update`, `delete`, `delivery.read`, `delivery.replay`
+- **OAuth clients**: `read`, `create`, `update`, `rotate_secret`, `revoke`
+- **Firm**: `read`, `update`, `delete`, `transfer_ownership`, `user.read`, `user.invite`, `user.role_change`, `user.remove`
+- **Tickets**: `create`, `read.own`, `read.firm` (team inbox, all firm roles), `reply`, `close.own`, `close.any`, `upload_attachment`
+- **Audit / usage / playground**: `audit.read.firm`, `usage.read`, `playground.execute`
+- **Self-service**: `profile.update`, `profile.totp_manage`, `profile.recovery_codes_regenerate`, `notifications.read`, `notifications.manage`
+
+### Admin-side
+
+- **Firm management**: `admin.firm.read/create/update/suspend/restore/firm_user.unlock`
+- **Customer management**: `admin.customer.read/ban/unban/avatar_upload`
+- **Tickets**: `admin.ticket.read_all/take_over/assign/add_internal_note/participants_manage/category_manage`
+- **Blacklist / status / system**: `admin.blacklist.{read,manage}`, `admin.status.{component,incident}_manage`, `admin.system.metrics_read`
+- **RBAC meta**: `admin.rbac.role_read/role_manage/permission_manage/user_role_assign`
+- **Admin user lifecycle**: `admin.user.read/create/update/delete/totp_reset`
+- **Audit**: `admin.audit.read`
+
+---
+
+## Ownership guards (handler-level)
+
+Middleware only gates on permission codes. Target-specific rules (e.g. "Member can rotate own API keys but not a teammate's") live in the handler and are documented inline.
+
+| Resource | Middleware code (least privilege) | Handler check |
+|----------|-------------------|----------------|
+| API key revoke | `api_key.revoke.own` | If caller lacks `api_key.revoke.any` and `created_by_user_id !== ctx.user.id` → 403. |
+| API key rotate | `api_key.rotate.own` | Same pattern. |
+| Firm user role change | `firm.user.role_change` | Owner-target blocked unless caller is Owner. Last-owner demote blocked (`owner_invariant_violated` / 409). |
+| Firm user remove | `firm.user.remove` | Last-owner remove blocked. |
+| Admin role assignment | `admin.rbac.user_role_assign` | Assigning the Superadmin preset requires the caller to be Superadmin. |
+| Customer status update | `admin.customer.ban` | Branches on action: ban requires `.ban`, unban requires `.unban` (Superadmin-only). |
+
+---
+
+## Client-side hooks
+
+The firm dashboard and admin panel each expose a SWR-backed hook that wraps `GET /{portal}/me/permissions`:
+
+```tsx
+import { useFirmPermissions } from '@/hooks/use-firm-permissions';
+
+function DeleteWebhookButton({ webhookId }: { webhookId: string }) {
+  const { has } = useFirmPermissions();
+  if (!has('webhook.delete')) return null;
+  return <Button variant="danger" onClick={...}>Delete</Button>;
+}
+```
+
+For conditional rendering, the `<RequireFirmPermission>` / `<RequireAdminPermission>` wrappers are provided:
+
+```tsx
+<RequireFirmPermission code="audit.read.firm" fallback={<Skeleton />}>
+  <AuditLogTable />
+</RequireFirmPermission>
+```
+
+These are **UX** layers. The button being hidden doesn't prevent a caller from bypassing the UI, the middleware still enforces on every call.
+
+---
+
+## What happens on denial
+
+A request missing the declared permission gets a structured `403` response:
+
+```json
+{
+  "error": {
+    "code": "permission_denied",
+    "message": "This action requires the 'webhook.delete' permission.",
+    "requestId": "req_abc123..."
+  }
+}
+```
+
+Every denial is logged to `audit_log` with action `access.permission_denied` and meta `{ permission, path, method }`, so incident response can answer "who attempted what, when". The audit write fails open (a broken audit layer never blocks the 403).
+
+---
+
+## Adding a new permission
+
+When introducing a new mutation or read surface:
+
+1. Add the permission code to `SYSTEM_PERMISSIONS` in `apps/web/src/lib/rbac/permissions.ts`.
+2. Assign it to the relevant preset roles in `apps/web/src/lib/rbac/roles.ts`.
+3. Re-run the seed: `pnpm --filter @crivacy/web exec tsx scripts/seed-rbac.ts`.
+4. Declare the permission on the route handler: `dashboardRoute({ permission: 'your.new.code', ... })`.
+5. If the code has an ownership variant, add the handler-level guard using `ctx.permissions.has('your.code.any')`.
+6. Update nav visibility (if applicable) in `apps/web/src/components/shared/nav-config.ts`.
+
+The `PermissionCode` TypeScript union is derived from the catalogue, so unknown codes become compile errors at the route level.
+
+---
+
+## Custom roles
+
+Admin panel → **Roles & Permissions** (`/admin/rbac`) lets superadmins create custom roles alongside the presets. Custom roles:
+
+- Scoped to a single `user_type` (`firm_user` or `admin_user`).
+- Have a custom permission set picked from the catalogue.
+- Can be assigned to users via `/admin/rbac/users/:id/roles`.
+- Do not have the `isPreset` flag; deletion is permitted (presets are undeletable).
+
+Preset roles (Viewer, Member, Admin, Owner, Support, Admin, Superadmin) cannot be renamed or deleted, they are system-critical defaults the backfill migration relies on.
+
+---
+
+## Troubleshooting
+
+**"I granted the permission in the admin UI but the user still sees 403."**
+Roles are resolved at request time; there's no session cache. The next request after the `user_roles` INSERT picks up the change. If the user is already on a page that requires the new permission, a refresh is enough.
+
+**"The Create button is hidden even though my role grants it."**
+The UI hook fetches `/me/permissions` once on mount and revalidates on focus. If the fetch hasn't completed, buttons read `has(...) = false`. Check for `isLoading` to distinguish "denied" from "still loading".
+
+**"Middleware returns 403 but the audit log has no entry."**
+Audit writes inside the middleware are wrapped in try/catch, a DB outage won't block the 403 but will silently drop the event. Check the Pino logger output for `audit-failure` lines; structured alerting on that stream is the follow-up.

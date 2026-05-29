@@ -1,0 +1,273 @@
+---
+title: Rate Limits
+description: Understand Crivacy API rate limits, monthly quotas, response headers, and best practices for staying within your tier's limits.
+lastUpdated: '2026-04-12'
+---
+
+## Overview
+
+Crivacy enforces two types of request limits to ensure fair usage and platform stability:
+
+- **Rate limit (per-second):** A token bucket algorithm that controls how many requests per second your account can make, with burst capacity for short spikes.
+- **Monthly quota:** A hard cap on the total number of API requests per calendar month.
+
+Both limits are enforced per firm account and are shared across every API key and OAuth access token the account issues, minting additional keys does not grant additional throughput. Every authenticated response includes headers showing your current limit status.
+
+---
+
+## Tier limits
+
+| Tier | Rate limit (req/s) | Burst capacity | Monthly quota | Webhook endpoints |
+|------|---------------------|----------------|---------------|-------------------|
+| **Free** | 1 | 5 | 1,000 | 1 |
+| **Starter** | 10 | 30 | 100,000 | 5 |
+| **Pro** | 100 | 300 | 1,000,000 | 50 |
+| **Enterprise** | Custom | Custom | Unlimited | Unlimited |
+
+### How the token bucket works
+
+The rate limit uses a **token bucket** algorithm:
+
+- Your bucket holds up to **burst capacity** tokens.
+- Tokens refill at the **rate limit** per second.
+- Each request consumes 1 token.
+- If the bucket is empty, the request is rejected with `429 Too Many Requests`.
+
+For example, on the **Starter** tier:
+
+- Your bucket holds 30 tokens (burst).
+- Tokens refill at 10 per second.
+- You can send a burst of 30 requests instantly, then sustain 10 per second.
+
+> **Note:** Free tier is intended for development and testing only. Use `crv_test_*` keys for development and upgrade to Starter or above for production workloads.
+
+---
+
+## Response headers
+
+Every authenticated API response includes rate limit and quota headers:
+
+### Rate limit headers
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-RateLimit-Limit` | Maximum requests per second for your tier. | `30` |
+| `X-RateLimit-Remaining` | Tokens remaining in the current bucket. | `27` |
+| `X-RateLimit-Reset` | Unix timestamp (seconds) when the bucket will next refill. | `1744459205` |
+
+### Quota headers
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-Quota-Limit` | Total requests allowed this month. | `100000` |
+| `X-Quota-Remaining` | Requests remaining this month. | `87432` |
+
+### Retry-After header
+
+When a request is rejected due to rate limiting or quota exhaustion, the response includes:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `Retry-After` | Seconds to wait before retrying. | `2` |
+
+### Example response headers (normal request)
+
+```
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 27
+X-RateLimit-Reset: 1744459205
+X-Quota-Limit: 100000
+X-Quota-Remaining: 87432
+Content-Type: application/json
+```
+
+### Example response headers (rate limited)
+
+```
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1744459205
+Retry-After: 2
+Content-Type: application/json
+```
+
+---
+
+## Handling rate limit errors
+
+When you exceed the rate limit, the API returns `429 Too Many Requests`:
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded. Please retry after the specified interval.",
+    "details": {
+      "limit": 30,
+      "remaining": 0,
+      "reset": "2026-04-12T12:00:05Z",
+      "retry_after_seconds": 2
+    }
+  }
+}
+```
+
+When you exceed the monthly quota:
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Monthly API quota exceeded. Upgrade your plan or wait for the next billing cycle.",
+    "details": {
+      "quota_limit": 100000,
+      "quota_used": 100000,
+      "reset_at": "2026-05-01T00:00:00Z",
+      "retry_after_seconds": 1641600
+    }
+  }
+}
+```
+
+---
+
+## Best practices
+
+### Implement exponential backoff
+
+When you receive a `429` response, do not immediately retry. Use exponential backoff with jitter:
+
+```javascript
+async function fetchWithRetry(url, options, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    const retryAfter = parseInt(response.headers.get('Retry-After') || '1', 10);
+    const backoff = retryAfter * 1000 + Math.random() * 1000; // Add jitter
+
+    console.log(`Rate limited. Retrying in ${Math.round(backoff)}ms (attempt ${attempt + 1})`);
+    await new Promise((resolve) => setTimeout(resolve, backoff));
+  }
+
+  throw new Error('Max retries exceeded');
+}
+```
+
+```python
+import time
+import random
+import requests
+
+def fetch_with_retry(url, headers, max_retries=5):
+    for attempt in range(max_retries):
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 429:
+            return response
+
+        retry_after = int(response.headers.get("Retry-After", "1"))
+        backoff = retry_after + random.random()  # Add jitter
+
+        print(f"Rate limited. Retrying in {backoff:.1f}s (attempt {attempt + 1})")
+        time.sleep(backoff)
+
+    raise Exception("Max retries exceeded")
+```
+
+### Monitor your quota usage
+
+Check your remaining quota proactively via the usage endpoint:
+
+```curl
+curl https://api.crivacy.io/api/v1/usage \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..."
+```
+
+```json
+{
+  "period": "2026-04",
+  "quota_limit": 100000,
+  "quota_used": 12568,
+  "quota_remaining": 87432,
+  "reset_at": "2026-05-01T00:00:00Z"
+}
+```
+
+### Cache responses where appropriate
+
+If you fetch the same credential or session status repeatedly, cache the result on your end. Credentials rarely change once issued, so a 5-minute cache can dramatically reduce your request count.
+
+### Use webhooks instead of polling
+
+Instead of polling `GET /api/v1/sessions/:id` in a loop, register a webhook endpoint to receive push notifications. This eliminates unnecessary requests entirely.
+
+### Batch operations
+
+If you need to check multiple credentials, fetch them in sequence with a small delay rather than sending all requests simultaneously. This avoids burning through your burst capacity.
+
+---
+
+## Checking your current tier and limits
+
+**Endpoint:** `GET /api/v1/limits`
+
+**Required scope:** `usage:read`
+
+```curl
+curl https://api.crivacy.io/api/v1/limits \
+  -H "x-api-key: crv_live_a1b2c3d4e5f6..."
+```
+
+```json
+{
+  "tier": "starter",
+  "rate_limit": {
+    "requests_per_second": 10,
+    "burst": 30
+  },
+  "quota": {
+    "monthly_limit": 100000,
+    "used": 12568,
+    "remaining": 87432,
+    "reset_at": "2026-05-01T00:00:00Z"
+  },
+  "webhook_endpoints": {
+    "limit": 5,
+    "used": 2,
+    "remaining": 3
+  }
+}
+```
+
+---
+
+## Upgrading your tier
+
+To increase your limits:
+
+1. Navigate to **Dashboard > Settings > Plan**.
+2. Select your new tier.
+3. Confirm the upgrade.
+
+Upgrades take effect immediately:
+
+- **Rate limit increase:** Your token bucket capacity is increased. Any tokens you have accrued are preserved, and the additional capacity is granted instantly.
+- **Quota increase:** Your monthly quota is increased. Already-used requests still count.
+
+Downgrades take effect at the start of the next billing cycle. If your current usage exceeds the new tier's quota, requests will continue to work until the current period ends.
+
+For **Enterprise** tier pricing and custom limits, contact [sales@crivacy.io](mailto:sales@crivacy.io).
+
+---
+
+## Next steps
+
+- [Error codes](/docs/error-codes), full reference for rate limit error responses.
+- [Authentication](/docs/authentication), API key scopes and management.
+- [API reference](/docs/api-reference), endpoint documentation.
