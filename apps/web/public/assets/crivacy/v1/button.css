@@ -1,0 +1,130 @@
+/*
+ * Crivacy button styles.
+ *
+ * Drop into your page via:
+ *   <link rel="stylesheet" href="https://app.crivacy.io/assets/crivacy/v1/button.css">
+ *
+ * Then mark your button with `class="crivacy-button"`. Variants:
+ *   - `crivacy-button--light` for light themes.
+ *   - `crivacy-button--dark` for dark themes (default).
+ *   - `crivacy-button--ghost` for a subtle inline style.
+ *
+ * Fonts + colors intentionally avoid theme assumptions beyond that.
+ * The host site's font stack is inherited so the button feels native.
+ */
+
+.crivacy-button,
+.crivacy-button:link,
+.crivacy-button:visited {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  min-height: 3rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+.crivacy-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(96, 211, 148, 0.6);
+}
+
+.crivacy-button:disabled,
+.crivacy-button[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ---- Busy / loading state -------------------------------------------- */
+/* Triggered by crivacy.js on click: it sets `aria-busy="true"` and
+   swaps the label text to "Verifying…" (or `data-busy-label`). CSS
+   hides the brand mark and draws a spinner in its place so the
+   button unmistakably shows "something's happening". */
+
+.crivacy-button[aria-busy='true'] {
+  opacity: 0.85;
+  cursor: progress;
+  pointer-events: none;
+}
+
+.crivacy-button[aria-busy='true'] .crivacy-button__icon {
+  display: none;
+}
+
+.crivacy-button[aria-busy='true']::before {
+  content: '';
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: crivacy-button-spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes crivacy-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.crivacy-button__icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+
+.crivacy-button__label {
+  white-space: nowrap;
+}
+
+/* ---- Dark variant (default) -------------------------------------------- */
+
+.crivacy-button,
+.crivacy-button--dark {
+  background-color: #0a0a0a;
+  color: #fafafa;
+  border-color: #262626;
+}
+
+.crivacy-button:hover,
+.crivacy-button--dark:hover {
+  background-color: #171717;
+  border-color: #404040;
+}
+
+/* ---- Light variant ----------------------------------------------------- */
+
+.crivacy-button--light {
+  background-color: #ffffff;
+  color: #0a0a0a;
+  border-color: #e5e5e5;
+}
+
+.crivacy-button--light:hover {
+  background-color: #f5f5f5;
+  border-color: #d4d4d4;
+}
+
+/* ---- Ghost variant ----------------------------------------------------- */
+
+.crivacy-button--ghost {
+  background-color: transparent;
+  color: inherit;
+  border-color: currentColor;
+}
+
+.crivacy-button--ghost:hover {
+  background-color: rgba(128, 128, 128, 0.08);
+}
