@@ -1,0 +1,23 @@
+# fhevm
+fhevmTemp
+
+# directories
+.coverage_artifacts
+.coverage_cache
+.coverage_contracts
+artifacts
+build
+cache
+coverage
+dist
+node_modules
+types
+deployments
+tmp
+
+# files
+.env
+*.env
+*.log
+.DS_Store
+coverage.json
