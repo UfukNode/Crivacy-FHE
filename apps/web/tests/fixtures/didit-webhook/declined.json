@@ -1,0 +1,9 @@
+{
+  "_doc": "Didit V3 webhook 'Declined' fixture (terminal fail). Maps to internal status='rejected'. Triggers fraud classification — if the decision payload carries fraud signals, banCustomer is invoked (account ban + email blacklist + credential revoke + session revoke + audit fan-out). Otherwise customer.kyc_failed audit + kyc.session.rejected firm webhook event.",
+  "session_id": "didit-session-abc",
+  "workflow_id": "11111111-2222-4333-8444-555555555555",
+  "vendor_data": "{\"type\":\"customer\",\"crivacySessionId\":\"ba111111-1111-4111-8111-111111111111\",\"customerId\":\"c1111111-1111-4111-8111-111111111111\"}",
+  "status": "Declined",
+  "timestamp": "2026-05-07T12:00:00.000Z",
+  "webhook_type": "status.updated"
+}
