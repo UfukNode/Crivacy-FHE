@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/*
+ * Design-token bridge for the test-firm harness. Mirrors the token → Tailwind
+ * mapping from the main Crivacy app so the shared code-block / tabs /
+ * multi-lang-snippet components (which reference `var(--color-*)`, radii,
+ * shadows) render identically here. The visual chrome itself is a dark stone
+ * palette set on the shell in `layout.tsx`.
+ */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-fg: var(--color-fg);
+  --color-muted: var(--color-muted);
+  --color-accent: var(--color-accent);
+  --color-border: var(--color-border);
+  --color-surface: var(--color-surface);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+
+  --font-family-sans: var(--font-inter), system-ui, sans-serif;
+  --font-family-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Tailwind v4 removed default cursor:pointer from interactive elements. */
+button,
+[role='button'],
+[type='button'],
+[type='submit'],
+[type='reset'],
+select,
+summary,
+a[href] {
+  cursor: pointer;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:focus-visible {
+  outline: var(--ring-width) solid var(--ring-color);
+  outline-offset: var(--ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+code,
+pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shiki dual-theme code blocks                                                */
+/* -------------------------------------------------------------------------- */
+/* `server-shiki.ts` runs with `defaultColor: false`, so Shiki emits
+ * `<pre class="shiki shiki-themes ...">` where each token carries
+ * `--shiki-light` / `--shiki-dark` custom properties instead of an inline
+ * `color`. Without CSS to resolve those variables the code renders as flat
+ * grey (no syntax colours). The harness shell pins `data-theme="dark"` via the
+ * `.tcd-shell` body class, so force the dark variant here. */
+.tcd-shell pre.shiki.shiki-themes,
+.tcd-shell pre.shiki.shiki-themes code {
+  background: #0b0d10 !important;
+  color: var(--shiki-dark) !important;
+}
+.tcd-shell pre.shiki.shiki-themes span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+/* Strip Shiki's per-token background stamps — the <pre> owns the single bg. */
+.tcd-shell pre.shiki.shiki-themes span,
+.tcd-shell pre.shiki.shiki-themes .line {
+  background-color: transparent !important;
+}
