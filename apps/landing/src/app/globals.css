@@ -1,0 +1,396 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/animations.css";
+@import "tw-animate-css";
+
+/* ==========================================================================
+   Dark variant wired to Crivacy's data-theme attribute so shadcn's `dark:`
+   utilities follow ThemeProvider instead of a separate `.dark` class.
+   ========================================================================== */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ==========================================================================
+   Tailwind v4 theme mapping
+   Expose Crivacy tokens + shadcn-compatible aliases as Tailwind utilities.
+   Every value references a CSS custom property so theme switching stays live.
+   ========================================================================== */
+
+@theme inline {
+  /* ---- Crivacy palette ---- */
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-overlay: var(--bg-overlay);
+
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-pressed: var(--accent-pressed);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-border: var(--accent-border);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-accent: var(--border-accent);
+
+  --color-state-success: var(--state-success);
+  --color-state-warning: var(--state-warning);
+  --color-state-error: var(--state-error);
+  --color-state-info: var(--state-info);
+
+  /* ---- shadcn-compatible aliases ----
+     shadcn components read these exact variable names. They resolve to
+     Crivacy tokens via the `:root` / `[data-theme]` blocks below. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* ---- Typography ---- */
+  --font-sans: var(--font-display);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-display);
+
+  /* ---- Radii (max 12px per CLAUDE.md) ---- */
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  /* ---- Shadows ---- */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  /* Magic UI pulse + orbit animations, rewritten to Crivacy tokens.
+     NOTE: This intentionally overrides Tailwind's default `animate-pulse`
+     (opacity fade). Crivacy uses `.skeleton` in animations.css for loaders,
+     so PulsatingButton owns `animate-pulse`. */
+  --animate-pulse: pulse var(--duration, 2s) ease-out infinite;
+  --animate-pulse-ripple: pulse-ripple var(--duration, 2s) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 var(--pulse-color, var(--accent-muted));
+    }
+    50% {
+      box-shadow: 0 0 0 var(--distance, 8px) var(--pulse-color, var(--accent-muted));
+    }
+  }
+  @keyframes pulse-ripple {
+    0% {
+      box-shadow: 0 0 0 0 var(--pulse-color, var(--accent-border));
+    }
+    100% {
+      box-shadow: 0 0 0 var(--distance, 16px) transparent;
+    }
+  }
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  @keyframes orbit {
+    0% {
+      transform: rotate(calc(var(--angle) * 1deg))
+        translateY(calc(var(--radius) * 1px))
+        rotate(calc(var(--angle) * -1deg));
+    }
+    100% {
+      transform: rotate(calc(var(--angle) * 1deg + 360deg))
+        translateY(calc(var(--radius) * 1px))
+        rotate(calc((var(--angle) * -1deg) - 360deg));
+    }
+  }
+
+  /* Magic UI ShineBorder — animates a radial gradient across a masked
+     border box. Duration is driven by the inline --duration var set on
+     the ShineBorder element so consumers can tune per-instance. */
+  --animate-shine: shine var(--duration, 14s) infinite linear;
+  @keyframes shine {
+    0% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+    100% {
+      background-position: 0% 0%;
+    }
+  }
+
+  /* Breathing border — used on Live Feed container in VideoSection to
+     communicate "streaming / canlı veri" status. Border color and an
+     outer box-shadow pulse between a near-invisible baseline and a
+     very subtle accent tint. Keyframe preserves var(--shadow-md) as
+     the first shadow layer so the existing card elevation is not lost
+     while the animation runs. color-mix with var(--accent-primary)
+     keeps the effect theme-reactive (brand yellow in dark, dark
+     accent in light). */
+  --animate-breathe: breathe 2s ease-in-out infinite;
+  @keyframes breathe {
+    0%, 100% {
+      border-color: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+      box-shadow: var(--shadow-md), 0 0 0 transparent;
+    }
+    50% {
+      border-color: color-mix(in srgb, var(--accent-primary) 25%, transparent);
+      box-shadow: var(--shadow-md), 0 0 20px color-mix(in srgb, var(--accent-primary) 6%, transparent);
+    }
+  }
+
+  /* Nudge-right — a tiny continuous rightward wobble used on the
+     Navbar "Launch App" CTA arrow. It signals "click to navigate
+     away" without requiring hover, so desktop visitors understand
+     the button leaves the marketing site. Amplitude is kept to 3px
+     so it reads as a hint, not as a distracting bounce. */
+  --animate-nudge-right: nudge-right 1.6s ease-in-out infinite;
+  @keyframes nudge-right {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(3px); }
+  }
+}
+
+/* ==========================================================================
+   shadcn variable mapping → Crivacy tokens
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
+
+  --card: var(--bg-secondary);
+  --card-foreground: var(--text-primary);
+
+  --popover: var(--bg-secondary);
+  --popover-foreground: var(--text-primary);
+
+  --primary: var(--accent-primary);
+  --primary-foreground: var(--accent-contrast);
+
+  --secondary: var(--bg-tertiary);
+  --secondary-foreground: var(--text-primary);
+
+  --muted: var(--bg-tertiary);
+  --muted-foreground: var(--text-secondary);
+
+  --accent: var(--accent-muted);
+  --accent-foreground: var(--accent-primary);
+
+  --destructive: var(--state-error);
+  --destructive-foreground: var(--text-primary);
+
+  --border: var(--border-default);
+  --input: var(--border-default);
+  --ring: var(--accent-primary);
+
+  --radius: 8px;
+}
+
+[data-theme="light"] {
+  /* Light-theme Crivacy values are already overridden in tokens.css,
+     so every shadcn alias above recomputes automatically. */
+}
+
+/* ==========================================================================
+   Base reset
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--border-default);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  letter-spacing: var(--letter-spacing-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--accent-muted);
+  color: var(--text-primary);
+}
+
+/* Note: element margins are already reset to 0 by Tailwind v4 preflight
+   (in @layer base). Do NOT add `margin: 0` here — unlayered rules win over
+   layered utilities in v4, which silently breaks `mx-auto`, `mt-*`, `mb-*`
+   on <p>/<h1-6> elements. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--text-primary);
+}
+
+p {
+  color: var(--text-secondary);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: inherit;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+/* ==========================================================================
+   Scrollbar (dark-first, subtle)
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ==========================================================================
+   Focus ring
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+::view-transition-old(root), ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+/* ==========================================================================
+   react-tweet theme override — maps Twitter's CSS variables onto Crivacy
+   tokens so embedded tweets match the dark-first design language.
+   Applied inside VideoSection's .crivacy-tweet-wrapper, which scopes the
+   override so no other library accidentally inherits these vars.
+   ========================================================================== */
+
+.crivacy-tweet-wrapper {
+  /* Typography */
+  --tweet-font-family: var(--font-display), system-ui, -apple-system, sans-serif;
+  --tweet-font-color: var(--text-primary);
+  --tweet-font-color-secondary: var(--text-secondary);
+
+  /* Backgrounds */
+  --tweet-bg-color: var(--bg-secondary);
+  --tweet-bg-color-hover: var(--bg-tertiary);
+  --tweet-quoted-bg-color-hover: var(--bg-tertiary);
+
+  /* Borders */
+  --tweet-border: 1px solid var(--border-subtle);
+  --tweet-skeleton-gradient: linear-gradient(
+    270deg,
+    var(--bg-secondary),
+    var(--bg-tertiary),
+    var(--bg-tertiary),
+    var(--bg-secondary)
+  );
+
+  /* Accents — Crivacy teal replaces Twitter blue */
+  --tweet-color-blue-primary: var(--accent-primary);
+  --tweet-color-blue-primary-hover: var(--accent-hover);
+  --tweet-color-blue-secondary: var(--accent-primary);
+  --tweet-color-blue-secondary-hover: var(--accent-muted);
+
+  /* Actions — keep red/green recognizable but dimmed to fit dark theme */
+  --tweet-color-red-primary: #f91880;
+  --tweet-color-red-primary-hover: rgba(249, 24, 128, 0.12);
+  --tweet-color-green-primary: #00ba7c;
+  --tweet-color-green-primary-hover: rgba(0, 186, 124, 0.12);
+
+  /* Container spacing — keep tight so the card fits our 560px slot */
+  --tweet-container-margin: 0;
+}
+
+.crivacy-tweet-wrapper [data-theme] {
+  border-radius: var(--radius-lg);
+  max-width: 100%;
+  /* react-tweet ships a 1.75rem vertical margin on its theme wrapper.
+     Inside the VideoSection carousel slot, that pushed the tweet card
+     ~28px below the top of the scroll container while the scrollbar
+     still ran full-height — the scrollbar looked detached from the
+     tweet. Zeroing the margin makes the tweet flush with the slot so
+     scroll + card align. */
+  margin: 0;
+}
+
+.crivacy-tweet-wrapper article {
+  max-width: 100%;
+}

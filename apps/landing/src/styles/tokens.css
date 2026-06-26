@@ -1,0 +1,233 @@
+/* ==========================================================================
+   Crivacy Design Tokens
+   Source of truth for colors, spacing, radii, shadows, easing, typography.
+   Dark theme is the default. Light theme is applied via [data-theme="light"].
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  /* ----- Surfaces ----- */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1a1a28;
+  --bg-elevated: #20202e;
+  --bg-overlay: rgba(10, 10, 15, 0.72);
+
+  /* ----- Accent — brand yellow (brand) ----- */
+  --accent-primary: #f3ff97;
+  --accent-hover: #fbffb4;
+  --accent-pressed: #e2ef78;
+  --accent-muted: rgba(243, 255, 151, 0.12);
+  --accent-subtle: rgba(243, 255, 151, 0.06);
+  --accent-border: rgba(243, 255, 151, 0.28);
+  --accent-contrast: #0a0a0f;
+
+  /* Desaturated accent for WebGL light rays — sits between accent-primary
+     and pure white so shader RGB multiplication yields a faint brand
+     tint instead of pure yellow. Used only by WatchSection's LightRays. */
+  --ray-tint: #fcffea;
+
+  /* Features section per-card decorative background tuning. The PNG
+     assets are fully opaque (solid black fill behind yellow owl/icon
+     content) rather than alpha-masked illustrations. Normal blending
+     would just show a black rectangle. Instead we use `mix-blend-mode:
+     screen`, whose formula `1 − (1−a)(1−b)` maps a black source pixel
+     to the destination unchanged — so the black plate vanishes — and
+     lifts the light-yellow content on top of the dark surface like a
+     printed plate. Opacity is slightly under 1 so the artwork reads as
+     atmosphere rather than a foreground layer. Light mode overrides
+     these in [data-theme="light"] with an invert+multiply combo. */
+  --features-bg-opacity: 0.7;
+  --features-bg-filter: none;
+  --features-bg-blend: screen;
+
+  /* GooeyNav particle highlight tuning. The gooey effect renders blurred
+     particles behind the active nav item then thresholds them with
+     contrast(100) into a single blob. The blob is blended onto the page
+     using `mix-blend-mode`. In dark mode, white particles + `lighten`
+     blend produce a glowing accent. In light mode, the same combo would
+     blend to pure white (the brightest possible color), erasing the
+     active item — so we override both the particle colour and the blend
+     mode in [data-theme="light"]. */
+  --gooey-particle-color: #ffffff;
+  --gooey-blend-mode: lighten;
+
+  /* ----- Text ----- */
+  --text-primary: #e8e8ed;
+  --text-secondary: #8a8a9a;
+  --text-tertiary: #5a5a6e;
+  --text-inverse: #0a0a0f;
+  --text-accent: var(--accent-primary);
+
+  /* ----- Borders ----- */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-accent: var(--accent-border);
+
+  /* ----- Beam (How It Works two-tone beam) ----- */
+  --beam-in: #e89a4a;
+  --beam-out: #63dcbe;
+
+  /* ----- State (functional, decoupled from brand accent) ----- */
+  --state-success: #63dcbe;
+  --state-warning: #f5c96b;
+  --state-error: #f26d6d;
+  --state-info: #6db4f2;
+
+  /* ----- Shadows (no glow, subtle only) ----- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="light"] {
+  /* ----- Surfaces — Warm earthy beige (Temple palette) -----
+     hsl(20, 15%, 88%) base. Warm brown undertone throughout. */
+  --bg-primary: #E5DFDC;     /* L0 — page bg, warm beige */
+  --bg-secondary: #DDD6D2;   /* L1 — section / card surface */
+  --bg-tertiary: #D2CAC6;    /* L2 — deeper surface (badges, hover bg) */
+  --bg-elevated: #EDE9E6;    /* L3 — elevated, pair with --shadow-md */
+  --bg-overlay: rgba(229, 223, 220, 0.72);
+
+  /* ----- Accent — Warm dark brown (Temple primary) -----
+     hsl(20, 14%, 13%). Earthy near-black for CTAs. */
+  --accent-primary: #26201D;
+  --accent-hover: #352D29;
+  --accent-pressed: #1D1815;
+  --accent-muted: rgba(38, 32, 29, 0.08);
+  --accent-subtle: rgba(38, 32, 29, 0.04);
+  --accent-border: rgba(38, 32, 29, 0.25);
+  --accent-contrast: #E5DFDC;
+
+  /* Light mode ray tint */
+  --ray-tint: #E5DFDC;
+
+  /* Features bg assets — invert + multiply to land dark ink on beige. */
+  --features-bg-opacity: 0.7;
+  --features-bg-filter: invert(1);
+  --features-bg-blend: multiply;
+
+  /* GooeyNav: dark particles + multiply blend over beige bg. */
+  --gooey-particle-color: #26201D;
+  --gooey-blend-mode: multiply;
+
+  /* ----- Text — warm brown tones (Temple foreground/muted) ----- */
+  --text-primary: #26201D;     /* hsl(20, 14%, 13%) — foreground */
+  --text-secondary: #6E635E;   /* hsl(20, 8%, 40%) — muted-foreground */
+  --text-tertiary: #9A918B;    /* hsl(20, 7%, 57%) — faint warm grey */
+  --text-inverse: #E5DFDC;
+  --text-accent: var(--accent-primary);
+
+  /* ----- Borders — warm brown-toned (Temple --border) ----- */
+  --border-subtle: rgba(38, 32, 29, 0.08);
+  --border-default: rgba(38, 32, 29, 0.15);
+  --border-strong: rgba(38, 32, 29, 0.25);
+  --border-accent: var(--accent-border);
+
+  /* ----- Beam ----- */
+  --beam-in: #d4843e;
+  --beam-out: #3aaa94;
+
+  /* ----- Shadows — warm brown-tinted ----- */
+  --shadow-xs: 0 1px 2px rgba(38, 32, 29, 0.06);
+  --shadow-sm: 0 1px 3px rgba(38, 32, 29, 0.07), 0 2px 6px rgba(38, 32, 29, 0.04);
+  --shadow-md: 0 2px 4px rgba(38, 32, 29, 0.07), 0 6px 16px rgba(38, 32, 29, 0.09);
+  --shadow-lg: 0 4px 12px rgba(38, 32, 29, 0.09), 0 16px 40px rgba(38, 32, 29, 0.12);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+:root {
+  /* ==========================================================================
+     Theme-agnostic tokens (same for dark and light)
+     ========================================================================== */
+
+  /* ----- Typography ----- */
+  --font-display: "Satoshi", system-ui, -apple-system, sans-serif;
+  /* --font-mono is injected by next/font (Geist Mono) */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700; /* hero only */
+
+  --font-size-xs: 0.6875rem;   /* 11px */
+  --font-size-sm: 0.8125rem;   /* 13px */
+  --font-size-base: 0.9375rem; /* 15px */
+  --font-size-md: 1rem;        /* 16px */
+  --font-size-lg: 1.125rem;    /* 18px */
+  --font-size-xl: 1.375rem;    /* 22px */
+  --font-size-2xl: 1.75rem;    /* 28px */
+  --font-size-3xl: 2.25rem;    /* 36px */
+  --font-size-4xl: 3rem;       /* 48px */
+  --font-size-5xl: 4rem;       /* 64px */
+  --font-size-hero: 5rem;      /* 80px */
+
+  --line-height-tight: 1.1;
+  --line-height-snug: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.04em;
+  --letter-spacing-widest: 0.12em;
+
+  /* ----- Spacing (4px base grid) ----- */
+  --space-0: 0;
+  --space-1: 0.25rem;  /* 4  */
+  --space-2: 0.5rem;   /* 8  */
+  --space-3: 0.75rem;  /* 12 */
+  --space-4: 1rem;     /* 16 */
+  --space-5: 1.25rem;  /* 20 */
+  --space-6: 1.5rem;   /* 24 */
+  --space-8: 2rem;     /* 32 */
+  --space-10: 2.5rem;  /* 40 */
+  --space-12: 3rem;    /* 48 */
+  --space-16: 4rem;    /* 64 */
+  --space-20: 5rem;    /* 80 */
+  --space-24: 6rem;    /* 96 */
+  --space-32: 8rem;    /* 128 */
+
+  /* ----- Radii (max 12px per CLAUDE.md) ----- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  /* ----- Easing ----- */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ----- Duration ----- */
+  --duration-instant: 80ms;
+  --duration-fast: 160ms;
+  --duration-normal: 240ms;
+  --duration-slow: 400ms;
+  --duration-slower: 600ms;
+
+  /* ----- Layout ----- */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1200px;
+  --container-2xl: 1400px;
+
+  --header-height: 4rem;
+
+  /* ----- Z-index scale ----- */
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-overlay: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+  --z-tooltip: 60;
+}
