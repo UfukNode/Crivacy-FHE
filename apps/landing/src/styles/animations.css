@@ -1,0 +1,200 @@
+/* ==========================================================================
+   Crivacy Animations
+   Lightweight keyframes for theme transitions, skeletons, pulse, and
+   scroll-reveal fallbacks. Heavy component animations come from libraries
+   (react-bits, Magic UI, Aceternity) — nothing hand-rolled here beyond this.
+   Respects prefers-reduced-motion.
+   ========================================================================== */
+
+/* ---------- Keyframes ---------- */
+
+@keyframes crivacy-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes crivacy-reveal-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes crivacy-reveal-down {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes crivacy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes crivacy-pulse-ring {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.6;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+}
+
+@keyframes crivacy-skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes crivacy-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Utility classes ---------- */
+
+.anim-fade-in {
+  animation: crivacy-fade-in var(--duration-normal) var(--ease-out) both;
+}
+
+.anim-reveal-up {
+  animation: crivacy-reveal-up var(--duration-slow) var(--ease-out) both;
+}
+
+.anim-reveal-down {
+  animation: crivacy-reveal-down var(--duration-slow) var(--ease-out) both;
+}
+
+.anim-pulse {
+  animation: crivacy-pulse 2s var(--ease-in-out) infinite;
+}
+
+.anim-pulse-ring {
+  animation: crivacy-pulse-ring 2.4s var(--ease-out) infinite;
+}
+
+.anim-blink {
+  animation: crivacy-blink 1s steps(2, start) infinite;
+}
+
+/* ---------- Skeleton loading ---------- */
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-subtle) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: crivacy-skeleton-shimmer 1.6s var(--ease-in-out) infinite;
+}
+
+/* ---------- Scroll reveal (IntersectionObserver pairing) ---------- */
+
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+  transition:
+    opacity var(--duration-slow) var(--ease-out),
+    transform var(--duration-slow) var(--ease-out);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.reveal-delay-1 {
+  transition-delay: 80ms;
+}
+.reveal-delay-2 {
+  transition-delay: 160ms;
+}
+.reveal-delay-3 {
+  transition-delay: 240ms;
+}
+.reveal-delay-4 {
+  transition-delay: 320ms;
+}
+
+/* ---------- Theme transition ---------- */
+
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition:
+    background-color var(--duration-normal) var(--ease-standard),
+    color var(--duration-normal) var(--ease-standard),
+    border-color var(--duration-normal) var(--ease-standard),
+    fill var(--duration-normal) var(--ease-standard),
+    stroke var(--duration-normal) var(--ease-standard) !important;
+  transition-delay: 0s !important;
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+}
