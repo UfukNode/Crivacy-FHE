@@ -1,0 +1,42 @@
+# Ansible inventory for Crivacy infrastructure.
+#
+# Two hosts:
+#   - backend: API server (<BACKEND_API_HOST>) — all application services
+#   - validator: MainNet validator (<MAINNET_VALIDATOR_HOST>) — monitoring sidecar only
+
+all:
+  children:
+    backend:
+      hosts:
+        api-host:
+          ansible_host: <BACKEND_API_HOST>
+          ansible_user: root
+          ansible_ssh_private_key_file: "{{ lookup('env', 'CRIVACY_BACKEND_SSH_KEY') }}"
+
+    validator:
+      hosts:
+        validator-host:
+          ansible_host: <MAINNET_VALIDATOR_HOST>
+          ansible_user: root
+          ansible_ssh_private_key_file: "{{ lookup('env', 'CRIVACY_VALIDATOR_SSH_KEY') }}"
+
+  vars:
+    # Application
+    app_name: crivacy
+    app_user: crivacy
+    app_group: crivacy
+    app_dir: /opt/crivacy/api
+    app_port: 3001
+
+    # Node.js
+    node_version: "22"
+
+    # PostgreSQL
+    pg_version: "16"
+    pg_port: 5433
+    pg_db: crivacy
+    pg_user: crivacy
+
+    # Monitoring
+    monitoring_dir: /opt/crivacy/monitoring
+    validator_monitoring_dir: /root/crivacy-monitoring

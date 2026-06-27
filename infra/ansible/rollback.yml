@@ -1,0 +1,68 @@
+# Ansible playbook: Rollback Crivacy API to previous release.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml rollback.yml
+#   ansible-playbook -i inventory.yml rollback.yml -e "target_release=20260412T1200"
+
+---
+- name: Rollback Crivacy API
+  hosts: backend
+  become: true
+
+  vars:
+    releases_dir: "/opt/crivacy/releases"
+    current_link: "/opt/crivacy/current"
+
+  tasks:
+    - name: Get current release
+      ansible.builtin.stat:
+        path: "{{ current_link }}"
+      register: current
+
+    - name: List available releases
+      ansible.builtin.shell: |
+        ls -1dt {{ releases_dir }}/*/ | head -10
+      register: available_releases
+      changed_when: false
+
+    - name: Show available releases
+      ansible.builtin.debug:
+        msg: "{{ available_releases.stdout_lines }}"
+
+    - name: Determine rollback target
+      ansible.builtin.set_fact:
+        rollback_target: >-
+          {{ target_release | default(available_releases.stdout_lines[1] | default('')) }}
+      when: target_release is not defined
+
+    - name: Fail if no rollback target
+      ansible.builtin.fail:
+        msg: "No previous release found to roll back to."
+      when: rollback_target | default('') == ''
+
+    - name: Symlink to rollback target
+      ansible.builtin.file:
+        src: "{{ rollback_target | trim }}"
+        dest: "{{ current_link }}"
+        state: link
+        force: true
+
+    - name: Restart API service
+      ansible.builtin.systemd:
+        name: crivacy-api
+        state: restarted
+
+    - name: Wait for health check
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port | default(3001) }}/api/v1/health"
+        method: GET
+        status_code: 200
+        timeout: 30
+      register: health_check
+      retries: 6
+      delay: 5
+      until: health_check.status == 200
+
+    - name: Rollback complete
+      ansible.builtin.debug:
+        msg: "Rolled back to: {{ rollback_target | trim }}"
