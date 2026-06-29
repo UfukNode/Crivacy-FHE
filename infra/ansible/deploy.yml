@@ -1,0 +1,181 @@
+# Ansible playbook: Deploy Crivacy API to backend host.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml deploy.yml
+#   ansible-playbook -i inventory.yml deploy.yml --tags=api   # API only
+#   ansible-playbook -i inventory.yml deploy.yml --tags=monitoring  # Monitoring only
+#
+# Prerequisites:
+#   - Next.js standalone build artifact (.tar.gz) in /tmp/crivacy-api-build.tar.gz
+#   - sops-decrypted .env available (or decrypt inline)
+
+---
+- name: Deploy Crivacy API
+  hosts: backend
+  become: true
+
+  vars:
+    build_artifact: "/tmp/crivacy-api-build.tar.gz"
+    deploy_dir: "{{ app_dir }}"
+    releases_dir: "/opt/crivacy/releases"
+    current_link: "/opt/crivacy/current"
+    keep_releases: 5
+
+  tasks:
+    # -----------------------------------------------------------------------
+    # System setup (first-time only)
+    # -----------------------------------------------------------------------
+    - name: Create application user
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+      tags: [setup]
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+      loop:
+        - /opt/crivacy
+        - "{{ releases_dir }}"
+        - "{{ deploy_dir }}"
+        - /var/log/crivacy
+      tags: [setup]
+
+    # -----------------------------------------------------------------------
+    # Deploy API
+    # -----------------------------------------------------------------------
+    - name: Generate release timestamp
+      ansible.builtin.set_fact:
+        release_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+      tags: [api]
+
+    - name: Create release directory
+      ansible.builtin.file:
+        path: "{{ releases_dir }}/{{ release_ts }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+      tags: [api]
+
+    - name: Upload and extract build artifact
+      ansible.builtin.unarchive:
+        src: "{{ build_artifact }}"
+        dest: "{{ releases_dir }}/{{ release_ts }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+      tags: [api]
+
+    - name: Decrypt and deploy .env
+      ansible.builtin.shell: |
+        sops --decrypt /opt/crivacy/secrets/production.env > {{ releases_dir }}/{{ release_ts }}/.env
+        chown {{ app_user }}:{{ app_group }} {{ releases_dir }}/{{ release_ts }}/.env
+        chmod 600 {{ releases_dir }}/{{ release_ts }}/.env
+      args:
+        creates: "{{ releases_dir }}/{{ release_ts }}/.env"
+      tags: [api]
+
+    - name: Symlink current release
+      ansible.builtin.file:
+        src: "{{ releases_dir }}/{{ release_ts }}"
+        dest: "{{ current_link }}"
+        state: link
+        force: true
+      tags: [api]
+
+    - name: Update deploy_dir symlink
+      ansible.builtin.file:
+        src: "{{ current_link }}"
+        dest: "{{ deploy_dir }}"
+        state: link
+        force: true
+      tags: [api]
+
+    - name: Run database migrations
+      ansible.builtin.shell: |
+        cd {{ releases_dir }}/{{ release_ts }}
+        node -e "require('./migrate.js').migrate()"
+      become_user: "{{ app_user }}"
+      tags: [api]
+
+    - name: Restart API service
+      ansible.builtin.systemd:
+        name: crivacy-api
+        state: restarted
+        daemon_reload: true
+      tags: [api]
+
+    - name: Wait for health check
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/api/v1/health"
+        method: GET
+        status_code: 200
+        timeout: 30
+      register: health_check
+      retries: 6
+      delay: 5
+      until: health_check.status == 200
+      tags: [api]
+
+    - name: Clean old releases (keep last {{ keep_releases }})
+      ansible.builtin.shell: |
+        cd {{ releases_dir }}
+        ls -1dt */ | tail -n +{{ keep_releases + 1 }} | xargs -r rm -rf
+      tags: [api]
+
+    # -----------------------------------------------------------------------
+    # Deploy monitoring stack
+    # -----------------------------------------------------------------------
+    - name: Sync monitoring configs
+      ansible.builtin.synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ monitoring_dir }}/"
+        rsync_opts:
+          - "--include=docker-compose/"
+          - "--include=prometheus/"
+          - "--include=grafana/"
+          - "--include=loki/"
+          - "--include=tempo/"
+          - "--include=promtail/"
+          - "--include=alertmanager/"
+          - "--include=blackbox-exporter/"
+          - "--include=scripts/"
+          - "--exclude=ansible/"
+          - "--exclude=secrets/"
+          - "--exclude=nginx/"
+          - "--exclude=systemd/"
+          - "--exclude=alloy/"
+      tags: [monitoring]
+
+    - name: Start monitoring stack
+      ansible.builtin.shell: |
+        cd {{ monitoring_dir }}/docker-compose/monitoring
+        docker compose up -d
+      tags: [monitoring]
+
+# ---------------------------------------------------------------------------
+# Validator monitoring sidecar
+# ---------------------------------------------------------------------------
+- name: Deploy validator monitoring
+  hosts: validator
+  become: true
+
+  tasks:
+    - name: Sync Alloy config
+      ansible.builtin.synchronize:
+        src: "{{ playbook_dir }}/../alloy/"
+        dest: "{{ validator_monitoring_dir }}/"
+      tags: [validator]
+
+    - name: Start Alloy sidecar
+      ansible.builtin.shell: |
+        cd {{ validator_monitoring_dir }}
+        docker compose up -d
+      tags: [validator]

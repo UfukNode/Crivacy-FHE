@@ -1,0 +1,448 @@
+# Ansible playbook: PostgreSQL Restore Drill — validates RTO/RPO targets.
+#
+# NON-DESTRUCTIVE on production database. Creates a temporary test database
+# (crivacy_drill), restores the latest backup into it, runs data integrity
+# checks, measures elapsed time against RTO/RPO targets, then cleans up.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml restore-drill.yml
+#   ansible-playbook -i inventory.yml restore-drill.yml -e "skip_notification=true"
+#
+# Targets:
+#   - RTO: 1 hour (restore must complete within this window)
+#   - RPO: 1 hour (backup timestamp must be fresher than this)
+#
+# Safety:
+#   - Idempotent: stale temp databases are dropped before starting
+#   - block/rescue/always: temp database is cleaned up even on failure
+#   - Production database (crivacy) is never touched
+
+---
+- name: PostgreSQL Restore Drill
+  hosts: backend
+  become: true
+
+  vars:
+    # Drill database (isolated from production)
+    drill_db: crivacy_drill
+    drill_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    drill_start_epoch: "{{ ansible_date_time.epoch }}"
+
+    # Targets (seconds)
+    rto_seconds: 3600
+    rpo_seconds: 3600
+
+    # Paths
+    backup_script: /opt/crivacy/scripts/backup-postgres.sh
+    backup_dir: /opt/crivacy/backups
+    drill_report_dir: /opt/crivacy/drill-reports
+
+    # Key tables to validate after restore
+    key_tables:
+      - firms
+      - api_keys
+      - kyc_sessions
+      - kyc_credentials_meta
+      - audit_log
+      - webhook_deliveries
+
+    # Notification
+    skip_notification: false
+    telegram_webhook_url: "http://127.0.0.1:9119/webhook"
+
+  tasks:
+    # =========================================================================
+    # Pre-flight: ensure report directory exists and clean stale drill DB
+    # =========================================================================
+    - name: Ensure drill report directory exists
+      ansible.builtin.file:
+        path: "{{ drill_report_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0755'
+
+    - name: Drop stale drill database if it exists (idempotent cleanup)
+      ansible.builtin.shell: |
+        psql -h 127.0.0.1 -p {{ pg_port }} -U postgres \
+          -c "DROP DATABASE IF EXISTS {{ drill_db }};" 2>&1
+      register: pre_cleanup
+      changed_when: "'DROP DATABASE' in pre_cleanup.stdout"
+
+    # =========================================================================
+    # Main drill: block/rescue/always for guaranteed cleanup
+    # =========================================================================
+    - name: Restore drill execution
+      block:
+        # -------------------------------------------------------------------
+        # Step 1: Take a fresh backup
+        # -------------------------------------------------------------------
+        - name: "Step 1 — Record backup start time"
+          ansible.builtin.shell: date +%s
+          register: step1_start
+          changed_when: false
+
+        - name: "Step 1 — Run backup script"
+          ansible.builtin.shell: |
+            bash {{ backup_script }}
+          register: backup_result
+
+        - name: "Step 1 — Record backup end time"
+          ansible.builtin.shell: date +%s
+          register: step1_end
+          changed_when: false
+
+        - name: "Step 1 — Calculate backup duration"
+          ansible.builtin.set_fact:
+            step1_duration: "{{ (step1_end.stdout | int) - (step1_start.stdout | int) }}"
+
+        # -------------------------------------------------------------------
+        # Step 2: Identify latest backup file and validate freshness (RPO)
+        # -------------------------------------------------------------------
+        - name: "Step 2 — Find latest backup file"
+          ansible.builtin.shell: |
+            readlink -f {{ backup_dir }}/{{ pg_db }}_latest.sql.gz
+          register: latest_backup_path
+          changed_when: false
+
+        - name: "Step 2 — Get backup file modification time (epoch)"
+          ansible.builtin.shell: |
+            stat -c %Y {{ latest_backup_path.stdout | trim }}
+          register: backup_mtime_epoch
+          changed_when: false
+
+        - name: "Step 2 — Get current epoch"
+          ansible.builtin.shell: date +%s
+          register: current_epoch
+          changed_when: false
+
+        - name: "Step 2 — Calculate backup age (seconds)"
+          ansible.builtin.set_fact:
+            backup_age_seconds: "{{ (current_epoch.stdout | int) - (backup_mtime_epoch.stdout | int) }}"
+
+        - name: "Step 2 — Validate RPO (backup freshness)"
+          ansible.builtin.set_fact:
+            rpo_pass: "{{ (backup_age_seconds | int) <= (rpo_seconds | int) }}"
+
+        - name: "Step 2 — Get backup file size"
+          ansible.builtin.shell: |
+            stat -c %s {{ latest_backup_path.stdout | trim }}
+          register: backup_file_size
+          changed_when: false
+
+        # -------------------------------------------------------------------
+        # Step 3: Create temporary drill database
+        # -------------------------------------------------------------------
+        - name: "Step 3 — Record create-db start time"
+          ansible.builtin.shell: date +%s
+          register: step3_start
+          changed_when: false
+
+        - name: "Step 3 — Create drill database"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U postgres \
+              -c "CREATE DATABASE {{ drill_db }} OWNER {{ pg_user }};"
+          register: create_db_result
+
+        - name: "Step 3 — Record create-db end time"
+          ansible.builtin.shell: date +%s
+          register: step3_end
+          changed_when: false
+
+        - name: "Step 3 — Calculate create-db duration"
+          ansible.builtin.set_fact:
+            step3_duration: "{{ (step3_end.stdout | int) - (step3_start.stdout | int) }}"
+
+        # -------------------------------------------------------------------
+        # Step 4: Restore backup into drill database
+        # -------------------------------------------------------------------
+        - name: "Step 4 — Record restore start time"
+          ansible.builtin.shell: date +%s
+          register: step4_start
+          changed_when: false
+
+        - name: "Step 4 — Restore backup into drill database"
+          ansible.builtin.shell: |
+            gunzip -c {{ latest_backup_path.stdout | trim }} | pg_restore \
+              -h 127.0.0.1 \
+              -p {{ pg_port }} \
+              -U {{ pg_user }} \
+              -d {{ drill_db }} \
+              --no-owner \
+              --no-privileges \
+              2>&1
+          register: restore_result
+          # pg_restore may exit non-zero for warnings (e.g. extension ownership),
+          # which are acceptable in a drill context.
+          failed_when: restore_result.rc != 0 and 'ERROR' in restore_result.stderr
+
+        - name: "Step 4 — Record restore end time"
+          ansible.builtin.shell: date +%s
+          register: step4_end
+          changed_when: false
+
+        - name: "Step 4 — Calculate restore duration"
+          ansible.builtin.set_fact:
+            step4_duration: "{{ (step4_end.stdout | int) - (step4_start.stdout | int) }}"
+
+        # -------------------------------------------------------------------
+        # Step 5: Data integrity checks on drill database
+        # -------------------------------------------------------------------
+        - name: "Step 5 — Record integrity check start time"
+          ansible.builtin.shell: date +%s
+          register: step5_start
+          changed_when: false
+
+        - name: "Step 5 — Count total tables in drill database"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U {{ pg_user }} -d {{ drill_db }} \
+              -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
+          register: drill_table_count
+          changed_when: false
+
+        - name: "Step 5 — Count total tables in production database"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_db }} \
+              -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
+          register: prod_table_count
+          changed_when: false
+
+        - name: "Step 5 — Validate table count matches"
+          ansible.builtin.set_fact:
+            table_count_match: "{{ (drill_table_count.stdout | trim) == (prod_table_count.stdout | trim) }}"
+
+        - name: "Step 5 — Count rows in key tables (drill)"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U {{ pg_user }} -d {{ drill_db }} \
+              -t -A -c "SELECT COUNT(*) FROM {{ item }};" 2>/dev/null || echo "-1"
+          loop: "{{ key_tables }}"
+          register: drill_row_counts
+          changed_when: false
+
+        - name: "Step 5 — Count rows in key tables (production)"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_db }} \
+              -t -A -c "SELECT COUNT(*) FROM {{ item }};" 2>/dev/null || echo "-1"
+          loop: "{{ key_tables }}"
+          register: prod_row_counts
+          changed_when: false
+
+        - name: "Step 5 — Build row count comparison"
+          ansible.builtin.set_fact:
+            row_count_results: >-
+              {{ row_count_results | default([]) + [{
+                'table': item.item,
+                'drill_count': (drill_row_counts.results[idx].stdout | trim | int),
+                'prod_count': (prod_row_counts.results[idx].stdout | trim | int),
+                'match': (drill_row_counts.results[idx].stdout | trim) == (prod_row_counts.results[idx].stdout | trim)
+              }] }}
+          loop: "{{ key_tables }}"
+          loop_control:
+            index_var: idx
+
+        - name: "Step 5 — Check if all row counts match"
+          ansible.builtin.set_fact:
+            all_rows_match: "{{ row_count_results | map(attribute='match') | list | reject('equalto', true) | list | length == 0 }}"
+
+        - name: "Step 5 — Verify drill database has drizzle migration metadata"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U {{ pg_user }} -d {{ drill_db }} \
+              -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'drizzle' OR table_name LIKE '%drizzle%' OR table_name LIKE '%migration%';"
+          register: migration_table_check
+          changed_when: false
+          failed_when: false
+
+        - name: "Step 5 — Record integrity check end time"
+          ansible.builtin.shell: date +%s
+          register: step5_end
+          changed_when: false
+
+        - name: "Step 5 — Calculate integrity check duration"
+          ansible.builtin.set_fact:
+            step5_duration: "{{ (step5_end.stdout | int) - (step5_start.stdout | int) }}"
+
+        # -------------------------------------------------------------------
+        # Step 6: Calculate total time and determine pass/fail
+        # -------------------------------------------------------------------
+        - name: "Step 6 — Get drill end epoch"
+          ansible.builtin.shell: date +%s
+          register: drill_end_epoch
+          changed_when: false
+
+        - name: "Step 6 — Calculate total drill duration"
+          ansible.builtin.set_fact:
+            total_duration_seconds: "{{ (drill_end_epoch.stdout | int) - (drill_start_epoch | int) }}"
+
+        - name: "Step 6 — Determine RTO pass/fail"
+          ansible.builtin.set_fact:
+            rto_pass: "{{ (total_duration_seconds | int) <= (rto_seconds | int) }}"
+
+        - name: "Step 6 — Determine overall pass/fail"
+          ansible.builtin.set_fact:
+            drill_passed: "{{ (rto_pass | bool) and (rpo_pass | bool) and (table_count_match | bool) and (all_rows_match | bool) }}"
+
+        # -------------------------------------------------------------------
+        # Step 7: Write drill report
+        # -------------------------------------------------------------------
+        - name: "Step 7 — Write drill report JSON"
+          ansible.builtin.copy:
+            content: |
+              {
+                "drill_id": "restore-drill-{{ drill_timestamp }}",
+                "timestamp": "{{ ansible_date_time.iso8601 }}",
+                "result": "{{ 'PASS' if (drill_passed | bool) else 'FAIL' }}",
+                "rto": {
+                  "target_seconds": {{ rto_seconds }},
+                  "actual_seconds": {{ total_duration_seconds }},
+                  "pass": {{ rto_pass | lower }}
+                },
+                "rpo": {
+                  "target_seconds": {{ rpo_seconds }},
+                  "backup_age_seconds": {{ backup_age_seconds }},
+                  "pass": {{ rpo_pass | lower }}
+                },
+                "backup": {
+                  "file": "{{ latest_backup_path.stdout | trim }}",
+                  "size_bytes": {{ backup_file_size.stdout | trim }},
+                  "backup_duration_seconds": {{ step1_duration }}
+                },
+                "restore": {
+                  "create_db_duration_seconds": {{ step3_duration }},
+                  "restore_duration_seconds": {{ step4_duration }},
+                  "integrity_check_duration_seconds": {{ step5_duration }},
+                  "total_duration_seconds": {{ total_duration_seconds }}
+                },
+                "integrity": {
+                  "table_count": {
+                    "production": {{ prod_table_count.stdout | trim }},
+                    "drill": {{ drill_table_count.stdout | trim }},
+                    "match": {{ table_count_match | lower }}
+                  },
+                  "row_counts": {{ row_count_results | to_json }},
+                  "all_rows_match": {{ all_rows_match | lower }},
+                  "migration_metadata_present": {{ (migration_table_check.stdout | trim | int > 0) | lower }}
+                },
+                "timings": {
+                  "backup_seconds": {{ step1_duration }},
+                  "create_db_seconds": {{ step3_duration }},
+                  "restore_seconds": {{ step4_duration }},
+                  "integrity_seconds": {{ step5_duration }},
+                  "total_seconds": {{ total_duration_seconds }}
+                }
+              }
+            dest: "{{ drill_report_dir }}/restore-drill-{{ drill_timestamp }}.json"
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0644'
+
+        - name: "Step 7 — Display drill summary"
+          ansible.builtin.debug:
+            msg: |
+              === RESTORE DRILL REPORT ===
+              Result: {{ 'PASS' if (drill_passed | bool) else 'FAIL' }}
+              ---
+              RTO target: {{ rto_seconds }}s | Actual: {{ total_duration_seconds }}s | {{ 'PASS' if (rto_pass | bool) else 'FAIL' }}
+              RPO target: {{ rpo_seconds }}s | Backup age: {{ backup_age_seconds }}s | {{ 'PASS' if (rpo_pass | bool) else 'FAIL' }}
+              ---
+              Table count: prod={{ prod_table_count.stdout | trim }} drill={{ drill_table_count.stdout | trim }} | {{ 'MATCH' if (table_count_match | bool) else 'MISMATCH' }}
+              Row counts match: {{ 'YES' if (all_rows_match | bool) else 'NO' }}
+              ---
+              Timings: backup={{ step1_duration }}s create_db={{ step3_duration }}s restore={{ step4_duration }}s integrity={{ step5_duration }}s total={{ total_duration_seconds }}s
+              ---
+              Report: {{ drill_report_dir }}/restore-drill-{{ drill_timestamp }}.json
+
+      # =====================================================================
+      # Rescue: capture failure details for the report
+      # =====================================================================
+      rescue:
+        - name: "Rescue — Record failure"
+          ansible.builtin.set_fact:
+            drill_passed: false
+            drill_failure_msg: "Drill failed during execution. Check ansible output for details."
+
+        - name: "Rescue — Get end epoch for partial timing"
+          ansible.builtin.shell: date +%s
+          register: rescue_end_epoch
+          changed_when: false
+
+        - name: "Rescue — Write failure report"
+          ansible.builtin.copy:
+            content: |
+              {
+                "drill_id": "restore-drill-{{ drill_timestamp }}",
+                "timestamp": "{{ ansible_date_time.iso8601 }}",
+                "result": "FAIL",
+                "error": "Drill execution failed. Review Ansible output for root cause.",
+                "partial_timings": {
+                  "total_seconds": {{ (rescue_end_epoch.stdout | int) - (drill_start_epoch | int) }}
+                }
+              }
+            dest: "{{ drill_report_dir }}/restore-drill-{{ drill_timestamp }}.json"
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0644'
+
+        - name: "Rescue — Display failure"
+          ansible.builtin.debug:
+            msg: |
+              === RESTORE DRILL FAILED ===
+              Drill encountered an error during execution.
+              A partial report has been written to: {{ drill_report_dir }}/restore-drill-{{ drill_timestamp }}.json
+              Review the Ansible output above for the root cause.
+
+      # =====================================================================
+      # Always: guaranteed cleanup of drill database + notification
+      # =====================================================================
+      always:
+        - name: "Cleanup — Drop drill database"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U postgres \
+              -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{{ drill_db }}' AND pid <> pg_backend_pid();" 2>/dev/null || true
+            psql -h 127.0.0.1 -p {{ pg_port }} -U postgres \
+              -c "DROP DATABASE IF EXISTS {{ drill_db }};" 2>&1
+          register: cleanup_result
+          failed_when: false
+
+        - name: "Cleanup — Verify drill database is gone"
+          ansible.builtin.shell: |
+            psql -h 127.0.0.1 -p {{ pg_port }} -U postgres \
+              -t -A -c "SELECT 1 FROM pg_database WHERE datname = '{{ drill_db }}';"
+          register: db_exists_check
+          changed_when: false
+          failed_when: db_exists_check.stdout | trim != ''
+
+        - name: "Notification — Send Telegram alert"
+          ansible.builtin.uri:
+            url: "{{ telegram_webhook_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              status: "{{ 'resolved' if (drill_passed | default(false) | bool) else 'firing' }}"
+              commonLabels:
+                alertname: "RestoreDrillResult"
+                severity: "{{ 'info' if (drill_passed | default(false) | bool) else 'warning' }}"
+                component: "backup"
+              groupLabels:
+                alertname: "RestoreDrillResult"
+              alerts:
+                - status: "{{ 'resolved' if (drill_passed | default(false) | bool) else 'firing' }}"
+                  labels:
+                    alertname: "RestoreDrillResult"
+                    severity: "{{ 'info' if (drill_passed | default(false) | bool) else 'warning' }}"
+                    component: "backup"
+                  annotations:
+                    summary: >-
+                      Restore drill {{ 'PASSED' if (drill_passed | default(false) | bool) else 'FAILED' }}
+                      (total {{ total_duration_seconds | default('?') }}s,
+                      RTO {{ rto_seconds }}s,
+                      RPO {{ rpo_seconds }}s)
+                    description: >-
+                      {{ 'All checks passed.' if (drill_passed | default(false) | bool) else 'One or more checks failed. Review the drill report.' }}
+                      Report: {{ drill_report_dir }}/restore-drill-{{ drill_timestamp }}.json
+                  startsAt: "{{ ansible_date_time.iso8601 }}"
+            status_code: [200, 201, 202, 502]
+            timeout: 10
+          when: not (skip_notification | default(false) | bool)
+          failed_when: false
