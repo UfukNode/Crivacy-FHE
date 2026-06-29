@@ -1,0 +1,40 @@
+# Local development Postgres for Crivacy.
+#
+# Brings up Postgres 16 on host port 5433 (NOT the default 5432, so it
+# never clashes with a system Postgres) with the `crivacy` owner role and
+# `crivacy` database that the baseline migration assumes already exist.
+# The NOBYPASSRLS `crivacy_app` and BYPASSRLS `crivacy_admin` roles are
+# created by migration 20260425120000_rls_roles_grants.sql, not here.
+#
+# Bound to 127.0.0.1 only — never expose a dev database on a public iface.
+#
+# Usage:
+#   docker compose -f infra/docker-compose/postgres/docker-compose.yml up -d
+#   # then, from apps/web:
+#   pnpm db:setup          # apply all migrations + seed RBAC + admin
+#
+# Data persists in the named volume `crivacy-pgdata`. To wipe and start
+# clean:
+#   docker compose -f infra/docker-compose/postgres/docker-compose.yml down -v
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: crivacy-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crivacy
+      POSTGRES_PASSWORD: crivacy
+      POSTGRES_DB: crivacy
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - crivacy-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crivacy -d crivacy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  crivacy-pgdata:
