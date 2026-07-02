@@ -1,0 +1,57 @@
+# Crivacy Blackbox Exporter — Synthetic HTTP/TCP probes
+# Mounted at /etc/blackbox-exporter/blackbox.yml inside the container.
+# Used by Prometheus scrape jobs to probe API health, backend services, etc.
+
+modules:
+  # ---------------------------------------------------------------------------
+  # HTTP GET — expect 200 OK
+  # General-purpose health probe (API health endpoint, Grafana, etc.)
+  # ---------------------------------------------------------------------------
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes:
+        - 200
+      method: GET
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      follow_redirects: false
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      tls_config:
+        insecure_skip_verify: false
+
+  # ---------------------------------------------------------------------------
+  # HTTP POST — expect 200 or 201
+  # Used for probing POST-only endpoints (e.g., JSON API liveness)
+  # ---------------------------------------------------------------------------
+  http_2xx_post:
+    prober: http
+    timeout: 10s
+    http:
+      valid_status_codes:
+        - 200
+        - 201
+      method: POST
+      headers:
+        Content-Type: application/json
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      follow_redirects: false
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      tls_config:
+        insecure_skip_verify: false
+
+  # ---------------------------------------------------------------------------
+  # TCP connect — raw socket probe
+  # Used for PostgreSQL port liveness, backend service ports, etc.
+  # ---------------------------------------------------------------------------
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      tls: false

@@ -1,0 +1,128 @@
+# Crivacy KYC API — Prometheus Configuration
+# Deployed via docker-compose (infra/docker-compose/monitoring).
+# Mounted read-only at /etc/prometheus/prometheus.yml inside the container.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    cluster: crivacy-prod
+    environment: production
+
+# ---------------------------------------------------------------------------
+# Alert rules
+# ---------------------------------------------------------------------------
+rule_files:
+  - '/etc/prometheus/alert-rules.yml'
+
+# ---------------------------------------------------------------------------
+# Alertmanager
+# ---------------------------------------------------------------------------
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+
+# ---------------------------------------------------------------------------
+# Storage — 30 day local retention (also set via CLI --storage.tsdb.retention.time)
+# ---------------------------------------------------------------------------
+storage:
+  tsdb:
+    retention:
+      time: 30d
+
+# ---------------------------------------------------------------------------
+# Scrape configs
+# ---------------------------------------------------------------------------
+scrape_configs:
+  # ---- 1. Prometheus self-monitoring ----
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+        labels:
+          component: monitoring
+
+  # ---- 2. Crivacy API (Next.js prom-client /metrics) ----
+  - job_name: crivacy-api
+    metrics_path: /metrics
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+          - host.docker.internal:3001
+        labels:
+          component: api
+          service: crivacy-api
+
+  # ---- 3. Node Exporter — host-level CPU/memory/disk/network ----
+  - job_name: node-exporter
+    static_configs:
+      - targets:
+          - node-exporter:9100
+        labels:
+          component: infrastructure
+
+  # ---- 4. Postgres Exporter — PostgreSQL metrics ----
+  - job_name: postgres-exporter
+    static_configs:
+      - targets:
+          - postgres-exporter:9187
+        labels:
+          component: database
+
+  # ---- 5. cAdvisor — container resource metrics ----
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+        labels:
+          component: infrastructure
+
+  # ---- 6. Loki — log aggregation self-metrics ----
+  - job_name: loki
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - loki:3100
+        labels:
+          component: logging
+
+  # ---- 7. Tempo — distributed tracing self-metrics ----
+  - job_name: tempo
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - tempo:3200
+        labels:
+          component: tracing
+
+  # ---- 8. Blackbox Exporter — synthetic health probe ----
+  - job_name: blackbox-health
+    metrics_path: /probe
+    params:
+      module:
+        - http_2xx
+    static_configs:
+      - targets:
+          - http://host.docker.internal:3001/api/v1/health
+    relabel_configs:
+      # The blackbox exporter takes the real target URL as a query param
+      # and exposes its own /probe endpoint. Standard relabeling pattern.
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ---- 9. Alertmanager — alert routing self-metrics ----
+  - job_name: alertmanager
+    static_configs:
+      - targets:
+          - alertmanager:9093
+        labels:
+          component: monitoring

@@ -1,0 +1,439 @@
+# Crivacy KYC API — Prometheus Alert Rules
+# Mounted read-only at /etc/prometheus/alert-rules.yml.
+#
+# Metric naming follows prom-client conventions used in the Next.js API:
+#   http_requests_total{method, route, status_code}
+#   http_request_duration_seconds{method, route, le}  (histogram)
+#   crivacy_rate_limit_denied_total{reason, firm_id}
+#   crivacy_quota_used_ratio{firm_id}
+#   crivacy_webhook_delivery_total{status}
+#   crivacy_webhook_dead_letter_total
+#   crivacy_webhook_circuit_breaker_tripped{endpoint_id}
+#
+# Infrastructure metrics come from node-exporter and postgres-exporter
+# with their standard metric names.
+
+groups:
+  # =========================================================================
+  # 1. API Health
+  # =========================================================================
+  - name: api-health
+    interval: 15s
+    rules:
+      # Health probe (blackbox exporter) fails for >2 min
+      - alert: CrivacyApiDown
+        expr: probe_success{job="blackbox-health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Crivacy API is unreachable"
+          description: >-
+            The /api/v1/health endpoint has been failing blackbox probe checks
+            for more than 2 minutes. The API may be down or unresponsive.
+          runbook_url: "https://docs.crivacy.io/runbooks/api-down"
+
+      # 5xx error rate exceeds 5% of total requests over 5 min.
+      # Suppressed while `CRIVACY_MAINTENANCE_MODE=1` is active —
+      # every non-exempt request is intentionally 503 during the
+      # maintenance window, so paging on it would spam on-call. The
+      # separate `CrivacyMaintenanceActive` alert (below) tracks the
+      # legitimate maintenance window.
+      - alert: CrivacyApiHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="crivacy-api", status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="crivacy-api"}[5m]))
+          ) > 0.05
+          unless on() crivacy_maintenance_mode{job="crivacy-api"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Crivacy API 5xx error rate above 5%"
+          description: >-
+            {{ $value | humanizePercentage }} of requests returned 5xx status
+            codes over the last 5 minutes. Investigate application logs for
+            panics, OOM, or downstream failures.
+          runbook_url: "https://docs.crivacy.io/runbooks/high-error-rate"
+
+      # Platform kill-switch active — informational alert so on-call
+      # sees the maintenance window in Alertmanager alongside the
+      # silence on CrivacyApiHighErrorRate. `for: 5m` gives the
+      # redeploy enough time to settle before paging; a flip + flip
+      # back inside 5m (e.g. corrective rollback) never pages.
+      - alert: CrivacyMaintenanceActive
+        expr: crivacy_maintenance_mode{job="crivacy-api"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Crivacy platform kill-switch is active"
+          description: >-
+            `CRIVACY_MAINTENANCE_MODE` is set to 1 on {{ $labels.instance }}.
+            The customer / firm API surface is returning 503 until the flag is
+            unset and the process restarted. Admin routes + /api/v1/health +
+            the public status page remain reachable.
+          runbook_url: "https://docs.crivacy.io/runbooks/maintenance-mode"
+
+      # p95 latency exceeds 2s over 5 min (warning)
+      - alert: CrivacyApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="crivacy-api"}[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Crivacy API p95 latency above 2 seconds"
+          description: >-
+            The 95th percentile request latency is {{ $value | humanizeDuration }},
+            exceeding the 2s warning threshold. Check database query times,
+            on-chain call latency, and connection pool saturation.
+          runbook_url: "https://docs.crivacy.io/runbooks/high-latency"
+
+      # p95 latency exceeds 5s over 5 min (critical)
+      - alert: CrivacyApiHighLatencyCritical
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="crivacy-api"}[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Crivacy API p95 latency above 5 seconds"
+          description: >-
+            The 95th percentile request latency is {{ $value | humanizeDuration }},
+            exceeding the 5s critical threshold. Immediate investigation required.
+            Possible causes: database lock contention, on-chain RPC
+            unreachable, resource exhaustion.
+          runbook_url: "https://docs.crivacy.io/runbooks/high-latency"
+
+  # =========================================================================
+  # 1b. Authentication
+  # =========================================================================
+  - name: authentication
+    interval: 30s
+    rules:
+      # Sudden spike of password failures across customer / firm / admin
+      # login handlers. Baseline for a healthy deployment is near zero;
+      # a sustained rate above 1/s indicates credential stuffing or a
+      # dictionary attack that the per-account lockout + per-IP rate
+      # limiter are beginning to surface. Per-method breakdown is
+      # available in Grafana via the `crivacy_auth_attempts_total`
+      # series (labels: method, result).
+      - alert: CrivacyAuthFailureSpike
+        expr: |
+          sum(rate(crivacy_auth_attempts_total{job="crivacy-api", result="failure"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Auth failure spike above 1/s (5m avg)"
+          description: >-
+            Authentication failures (password, JWT, or api_key) are averaging
+            {{ $value | humanize }} per second across the API for the last
+            5 minutes. Investigate the `crivacy_auth_attempts_total` series
+            in Grafana to identify the method that is spiking — sustained
+            `method="password"` spikes indicate credential stuffing, while
+            `method="jwt"` spikes point at a stolen-session revocation or
+            a client that keeps retrying with an expired token.
+          runbook_url: "https://docs.crivacy.io/runbooks/auth-failure-spike"
+
+      # JWT session failure rate — a healthy deployment sees the
+      # occasional naturally-expired cookie, but a sustained spike in
+      # `method="jwt"` failures (for example, a revoked-session replay
+      # loop or a misconfigured client with a stale token) is worth
+      # paging on separately.
+      - alert: CrivacyJwtFailureSpike
+        expr: |
+          sum(rate(crivacy_auth_attempts_total{job="crivacy-api", method="jwt", result="failure"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "JWT session failure rate above 5/s (5m avg, sustained 10m)"
+          description: >-
+            JWT session verification is failing at {{ $value | humanize }} per
+            second over the last 5 minutes, sustained for 10 minutes. Possible
+            causes: a large cohort of naturally-expired cookies (benign), a
+            revoked-session replay loop, or a misconfigured client spamming
+            a stale token.
+          runbook_url: "https://docs.crivacy.io/runbooks/auth-failure-spike"
+
+  # =========================================================================
+  # 2. Rate Limiting
+  # =========================================================================
+  - name: rate-limiting
+    interval: 30s
+    rules:
+      # More than 10% of requests are rate-limited over 10 min
+      - alert: CrivacyHighRateLimitRate
+        expr: |
+          (
+            sum(rate(crivacy_rate_limit_denied_total{job="crivacy-api"}[10m]))
+            /
+            sum(rate(http_requests_total{job="crivacy-api"}[10m]))
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High rate-limit denial rate (>10%)"
+          description: >-
+            {{ $value | humanizePercentage }} of all API requests were denied
+            by rate limiting over the last 10 minutes. This may indicate a
+            misbehaving client, a DDoS attempt, or tier limits set too low
+            for legitimate traffic.
+          runbook_url: "https://docs.crivacy.io/runbooks/rate-limit-surge"
+
+      # Firm monthly quota utilization above 95%
+      - alert: CrivacyQuotaExhausted
+        expr: crivacy_quota_used_ratio{job="crivacy-api"} > 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Firm {{ $labels.firm_id }} monthly quota >95% used"
+          description: >-
+            Firm {{ $labels.firm_id }} has consumed {{ $value | humanizePercentage }}
+            of their monthly API quota. They will start receiving 429 quota_exceeded
+            responses once the limit is reached. Consider notifying the firm or
+            offering a tier upgrade.
+          runbook_url: "https://docs.crivacy.io/runbooks/quota-exhaustion"
+
+  # =========================================================================
+  # 3. Infrastructure
+  # =========================================================================
+  - name: infrastructure
+    interval: 30s
+    rules:
+      # CPU usage above 80% for 10 min
+      - alert: HighCpuUsage
+        expr: |
+          100 - (
+            avg by (instance) (
+              irate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[5m])
+            ) * 100
+          ) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Host CPU usage above 80%"
+          description: >-
+            CPU usage on {{ $labels.instance }} has been at {{ $value | humanize }}%
+            for more than 10 minutes. Check for runaway processes, high request
+            volume, or insufficient compute capacity.
+          runbook_url: "https://docs.crivacy.io/runbooks/high-cpu"
+
+      # Memory usage above 85% for 10 min
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            1 - (
+              node_memory_MemAvailable_bytes{job="node-exporter"}
+              /
+              node_memory_MemTotal_bytes{job="node-exporter"}
+            )
+          ) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Host memory usage above 85%"
+          description: >-
+            Memory usage on {{ $labels.instance }} is at {{ $value | humanize }}%.
+            Check for memory leaks in the API process, oversized query result sets,
+            or container limits that need adjustment.
+          runbook_url: "https://docs.crivacy.io/runbooks/high-memory"
+
+      # Disk free space below 15% (warning)
+      - alert: DiskSpaceRunningLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter", fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{job="node-exporter", fstype!~"tmpfs|overlay"}
+          ) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Disk space below 15% on {{ $labels.mountpoint }}"
+          description: >-
+            Filesystem {{ $labels.device }} mounted at {{ $labels.mountpoint }}
+            on {{ $labels.instance }} has only {{ $value | humanize }}% free space.
+            Consider cleaning up old logs, Prometheus TSDB snapshots, or Docker
+            images/volumes.
+          runbook_url: "https://docs.crivacy.io/runbooks/disk-space"
+
+      # Disk free space below 5% (critical)
+      - alert: DiskSpaceCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{job="node-exporter", fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{job="node-exporter", fstype!~"tmpfs|overlay"}
+          ) * 100 < 5
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "CRITICAL: Disk space below 5% on {{ $labels.mountpoint }}"
+          description: >-
+            Filesystem {{ $labels.device }} mounted at {{ $labels.mountpoint }}
+            on {{ $labels.instance }} has only {{ $value | humanize }}% free space.
+            Immediate action required to prevent write failures, database corruption,
+            and service outage.
+          runbook_url: "https://docs.crivacy.io/runbooks/disk-space"
+
+  # =========================================================================
+  # 4. Database
+  # =========================================================================
+  - name: database
+    interval: 30s
+    rules:
+      # Postgres exporter is down for >2 min (implies DB unreachable)
+      - alert: PostgresDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: >-
+            The postgres-exporter has been unable to connect to PostgreSQL
+            for more than 2 minutes. The database may be down, out of
+            connections, or the exporter DSN may be misconfigured.
+          runbook_url: "https://docs.crivacy.io/runbooks/postgres-down"
+
+      # Active connections above 80% of max_connections
+      - alert: PostgresHighConnections
+        expr: |
+          (
+            pg_stat_activity_count{job="postgres-exporter", state="active"}
+            /
+            pg_settings_max_connections{job="postgres-exporter"}
+          ) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL connections above 80% of max"
+          description: >-
+            {{ $value | humanizePercentage }} of max_connections are currently
+            active. Connection pool saturation can cause request queuing and
+            timeouts. Check for long-running queries, connection leaks, or
+            increase max_connections / pool size.
+          runbook_url: "https://docs.crivacy.io/runbooks/postgres-connections"
+
+      # Average query duration exceeds 5 seconds
+      - alert: PostgresSlowQueries
+        expr: |
+          rate(pg_stat_activity_max_tx_duration{job="postgres-exporter"}[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL queries averaging above 5 seconds"
+          description: >-
+            The average transaction duration is {{ $value | humanizeDuration }}.
+            Check for missing indexes, full table scans, lock contention, or
+            the pg-boss job queue monopolizing connections.
+          runbook_url: "https://docs.crivacy.io/runbooks/postgres-slow-queries"
+
+      # Replication lag exceeds 30 seconds (if replica is configured)
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag{job="postgres-exporter"} > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL replication lag above 30 seconds"
+          description: >-
+            Replication lag is {{ $value | humanizeDuration }} on
+            {{ $labels.instance }}. The replica may be under heavy load,
+            network constrained, or experiencing WAL apply delays.
+          runbook_url: "https://docs.crivacy.io/runbooks/postgres-replication"
+
+  # =========================================================================
+  # 5. Webhooks
+  # =========================================================================
+  - name: webhooks
+    interval: 30s
+    rules:
+      # Webhook delivery failure rate above 20% over 10 min
+      - alert: WebhookDeliveryFailureRate
+        expr: |
+          (
+            sum(rate(crivacy_webhook_delivery_total{job="crivacy-api", status="failed"}[10m]))
+            /
+            sum(rate(crivacy_webhook_delivery_total{job="crivacy-api"}[10m]))
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: webhooks
+        annotations:
+          summary: "Webhook delivery failure rate above 20%"
+          description: >-
+            {{ $value | humanizePercentage }} of outbound webhook deliveries
+            are failing. Check firm endpoint availability, DNS resolution,
+            and network egress rules. Persistent failures will trip circuit
+            breakers and route deliveries to dead letter.
+          runbook_url: "https://docs.crivacy.io/runbooks/webhook-failures"
+
+      # Dead letter count increasing over 30 min
+      - alert: WebhookDeadLetterAccumulating
+        expr: |
+          increase(crivacy_webhook_dead_letter_total{job="crivacy-api"}[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: webhooks
+        annotations:
+          summary: "Webhook dead letters accumulating"
+          description: >-
+            Dead-lettered webhook deliveries have been increasing for the last
+            30 minutes. This means retries are exhausted and firms are not
+            receiving event notifications. Review the dead letter queue in the
+            admin dashboard and contact affected firms.
+          runbook_url: "https://docs.crivacy.io/runbooks/webhook-dead-letter"
+
+      # Any circuit breaker is currently tripped
+      - alert: WebhookCircuitBreakerTripped
+        expr: crivacy_webhook_circuit_breaker_tripped{job="crivacy-api"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: webhooks
+        annotations:
+          summary: "Webhook circuit breaker tripped for endpoint {{ $labels.endpoint_id }}"
+          description: >-
+            The circuit breaker for webhook endpoint {{ $labels.endpoint_id }}
+            (firm {{ $labels.firm_id }}) has been open for more than 5 minutes.
+            All deliveries to this endpoint are being skipped. The breaker will
+            auto-reset after the cooldown period, but the firm should be notified
+            that their endpoint is consistently failing.
+          runbook_url: "https://docs.crivacy.io/runbooks/webhook-circuit-breaker"
