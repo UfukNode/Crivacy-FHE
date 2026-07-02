@@ -1,0 +1,71 @@
+# Grafana datasource provisioning for Crivacy monitoring stack.
+# Loaded automatically by Grafana on startup.
+#
+# Stack:
+#   - Prometheus  (metrics)
+#   - Loki        (logs)
+#   - Tempo       (traces, linked to Loki for trace-to-logs)
+
+apiVersion: 1
+
+deleteDatasources: []
+
+datasources:
+  # ── Prometheus ─────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "15s"
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: tempo
+
+  # ── Loki ───────────────────────────────────────────────────
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"traceId":"([a-f0-9]+)"'
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          matcherType: regex
+
+  # ── Tempo ──────────────────────────────────────────────────
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1h"
+        spanEndTimeShift: "1h"
+        filterByTraceID: true
+        filterBySpanID: false
+        tags:
+          - key: service.name
+            value: service_name
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: "-1h"
+        spanEndTimeShift: "1h"
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      lokiSearch:
+        datasourceUid: loki
