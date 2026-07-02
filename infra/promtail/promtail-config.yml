@@ -1,0 +1,124 @@
+# Crivacy Promtail — Log shipper for Docker container logs
+# Mounted at /etc/promtail/promtail-config.yml inside the container.
+# Reads Docker container logs + parses pino JSON format.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576                       # 1 MB
+    timeout: 10s
+    tenant_id: ""
+
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # Docker container logs — file-based discovery via /var/lib/docker/containers
+  # -------------------------------------------------------------------------
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: name
+            values:
+              - "crivacy-.*"
+    relabel_configs:
+      # Extract container name from __meta_docker_container_name (leading / stripped)
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/?(.+)"
+        target_label: container
+      # Set the log path to the Docker JSON log file
+      - source_labels: ["__meta_docker_container_id"]
+        target_label: __path__
+        replacement: "/var/lib/docker/containers/$1/$1-json.log"
+      # Carry Docker compose service label
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: compose_service
+      # Carry Docker compose project label
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        target_label: compose_project
+      # Static labels
+      - target_label: job
+        replacement: crivacy-docker
+      - target_label: host
+        replacement: crivacy-api
+
+    pipeline_stages:
+      # Docker wraps logs in {"log": "...", "stream": "...", "time": "..."}
+      - docker: {}
+
+      # -----------------------------------------------------------------------
+      # Drop health-check noise before any further processing
+      # Matches pino JSON lines containing GET /api/v1/health
+      # -----------------------------------------------------------------------
+      - match:
+          selector: '{job="crivacy-docker"}'
+          stages:
+            - regex:
+                expression: 'GET\s+/api/v1/health'
+            - drop:
+                source: ""
+                expression: "GET\\s+/api/v1/health"
+                drop_counter_reason: health_check_noise
+
+      # -----------------------------------------------------------------------
+      # Parse pino JSON log format
+      # Expected fields: level, msg, time, requestId, firmId, apiKeyId, err
+      # -----------------------------------------------------------------------
+      - match:
+          selector: '{job="crivacy-docker"} |~ "^\\{"'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  msg: msg
+                  time: time
+                  request_id: requestId
+                  firm_id: firmId
+                  api_key_id: apiKeyId
+                  err: err
+
+            # Pino uses numeric levels: 10=trace, 20=debug, 30=info, 40=warn, 50=error, 60=fatal
+            - template:
+                source: level
+                template: >-
+                  {{ if eq .Value "10" }}trace{{ else if eq .Value "20" }}debug{{ else if eq .Value "30" }}info{{ else if eq .Value "40" }}warn{{ else if eq .Value "50" }}error{{ else if eq .Value "60" }}fatal{{ else }}{{ .Value }}{{ end }}
+
+            - labels:
+                level:
+
+            # Structured metadata (Loki 3.x) — indexed but not label cardinality
+            - structured_metadata:
+                request_id:
+                firm_id:
+                api_key_id:
+
+            # Use pino timestamp (epoch ms) as Loki timestamp
+            - timestamp:
+                source: time
+                format: UnixMs
+                fallback_formats:
+                  - RFC3339
+                  - RFC3339Nano
+
+            # Use msg field as the log line output
+            - output:
+                source: msg
+
+      # -----------------------------------------------------------------------
+      # Non-JSON lines (startup banners, crash dumps) — pass through as-is
+      # -----------------------------------------------------------------------
+      - match:
+          selector: '{job="crivacy-docker"} !~ "^\\{"'
+          stages:
+            - labels:
+                level:
+            - static_labels:
+                level: info
