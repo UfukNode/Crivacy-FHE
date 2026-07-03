@@ -1,0 +1,92 @@
+# Crivacy Tempo 2.x — Single-node distributed tracing backend
+# Mounted at /etc/tempo/tempo-config.yml inside the container.
+# Data volume: /var/tempo (Docker named volume tempo_data)
+
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 5000000                   # 5 MB — flush to backend frequently
+  max_block_duration: 5m
+  lifecycler:
+    ring:
+      replication_factor: 1
+      kvstore:
+        store: inmemory
+
+compactor:
+  compaction:
+    block_retention: 720h                    # 30 days — match Loki/Prometheus retention
+    compaction_window: 1h
+    max_compaction_objects: 6
+    compacted_block_retention: 1h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+    block:
+      bloom_filter_false_positive: 0.05
+      v2_index_downsample_bytes: 1000
+      v2_encoding: zstd
+
+metrics_generator:
+  ring:
+    kvstore:
+      store: inmemory
+  processor:
+    service_graphs:
+      dimensions:
+        - http.method
+        - http.route
+        - http.status_code
+      max_items: 10000
+      wait: 10s
+    span_metrics:
+      dimensions:
+        - http.method
+        - http.route
+        - http.status_code
+        - rpc.method
+      enable_target_info: true
+      filter_policies:
+        - include:
+            match_type: strict
+            attributes:
+              - key: service.name
+                value: crivacy-api
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics
+    max_traces_per_user: 0                   # unlimited for single tenant
+    max_bytes_per_trace: 5000000             # 5 MB safety cap per trace
+    ingestion_rate_limit_bytes: 15000000     # 15 MB/s
+    ingestion_burst_size_bytes: 20000000     # 20 MB burst
+
+usage_report:
+  reporting_enabled: false
