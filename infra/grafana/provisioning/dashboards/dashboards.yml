@@ -1,0 +1,17 @@
+# Grafana dashboard provisioning for Crivacy monitoring stack.
+# Dashboards are loaded from /var/lib/grafana/dashboards/ inside the
+# Grafana container. The docker-compose volume mount maps
+# infra/grafana/dashboards/ -> /var/lib/grafana/dashboards/.
+
+apiVersion: 1
+
+providers:
+  - name: Crivacy
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/
+      foldersFromFilesStructure: false

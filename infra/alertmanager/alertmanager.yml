@@ -1,0 +1,136 @@
+# Alertmanager configuration for Crivacy monitoring stack.
+#
+# Alert routing:
+#   - Critical alerts -> Telegram + email
+#   - Warning alerts  -> Telegram only
+#
+# Environment variables are NOT supported natively in Alertmanager config.
+# Use envsubst or a wrapper script to substitute TELEGRAM_BOT_TOKEN and
+# TELEGRAM_CHAT_ID before mounting this file, or use the --cluster.* flags
+# with a config reloader sidecar.
+#
+# For initial setup: replace <TELEGRAM_BOT_TOKEN> and <TELEGRAM_CHAT_ID>
+# with actual values in a local copy (NOT committed to git — use sops).
+
+global:
+  resolve_timeout: 5m
+  smtp_from: 'alerts@crivacy.io'
+  smtp_smarthost: 'localhost:25'
+  smtp_require_tls: false
+
+templates: []
+
+route:
+  receiver: 'telegram-warning'
+  group_by: ['alertname', 'severity', 'component']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical alerts: Telegram + email
+    - receiver: 'telegram-critical'
+      match:
+        severity: critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      continue: true
+
+    - receiver: 'email-critical'
+      match:
+        severity: critical
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: true
+
+    # Critical alerts: Custom bot (on-call routing + status page auto-update)
+    - receiver: 'webhook-bot'
+      match:
+        severity: critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+
+    # Warning alerts: Telegram + custom bot
+    - receiver: 'telegram-warning'
+      match:
+        severity: warning
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: true
+
+    - receiver: 'webhook-bot'
+      match:
+        severity: warning
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+receivers:
+  - name: 'telegram-critical'
+    telegram_configs:
+      - bot_token: '<TELEGRAM_BOT_TOKEN>'
+        chat_id: <TELEGRAM_CHAT_ID>
+        api_url: 'https://api.telegram.org'
+        parse_mode: 'HTML'
+        disable_notifications: false
+        message: |
+          <b>CRITICAL</b> {{ .CommonLabels.alertname }}
+          <b>Component:</b> {{ .CommonLabels.component }}
+          <b>Severity:</b> {{ .CommonLabels.severity }}
+
+          {{ range .Alerts.Firing }}
+          <b>Summary:</b> {{ .Annotations.summary }}
+          <b>Description:</b> {{ .Annotations.description }}
+          <b>Since:</b> {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+          {{ if .Annotations.runbook_url }}<b>Runbook:</b> {{ .Annotations.runbook_url }}{{ end }}
+          ---
+          {{ end }}
+
+  - name: 'telegram-warning'
+    telegram_configs:
+      - bot_token: '<TELEGRAM_BOT_TOKEN>'
+        chat_id: <TELEGRAM_CHAT_ID>
+        api_url: 'https://api.telegram.org'
+        parse_mode: 'HTML'
+        disable_notifications: false
+        message: |
+          <b>WARNING</b> {{ .CommonLabels.alertname }}
+          <b>Component:</b> {{ .CommonLabels.component }}
+
+          {{ range .Alerts.Firing }}
+          {{ .Annotations.summary }}
+          {{ end }}
+
+  - name: 'email-critical'
+    email_configs:
+      - to: 'ufuk@crivacy.io'
+        send_resolved: true
+        headers:
+          Subject: '[CRIVACY CRITICAL] {{ .CommonLabels.alertname }}'
+        html: |
+          <h2>{{ .CommonLabels.alertname }}</h2>
+          <p><b>Component:</b> {{ .CommonLabels.component }}</p>
+          <p><b>Severity:</b> {{ .CommonLabels.severity }}</p>
+          {{ range .Alerts.Firing }}
+          <p><b>Summary:</b> {{ .Annotations.summary }}</p>
+          <p>{{ .Annotations.description }}</p>
+          <hr/>
+          {{ end }}
+
+  - name: 'webhook-bot'
+    webhook_configs:
+      - url: 'http://crivacy-telegram-alert-bot:9095/webhook'
+        send_resolved: true
+        max_alerts: 10
+
+inhibit_rules:
+  # If a critical alert fires, suppress the corresponding warning
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'component']
