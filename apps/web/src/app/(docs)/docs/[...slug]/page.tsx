@@ -271,7 +271,7 @@ function DocsShell({
 
         {/* Page heading */}
         <header className="mb-10 border-b border-[var(--color-border)] pb-6">
-          <h1 className="text-[32px] font-semibold leading-tight tracking-tight text-[var(--color-fg)]">
+          <h1 className="text-3xl font-semibold leading-tight tracking-tight text-[var(--color-fg)]">
             {title}
           </h1>
           {lastUpdated !== undefined && (
