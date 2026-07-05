@@ -1,0 +1,56 @@
+# Crivacy API — Next.js standalone server.
+#
+# Runs the production Next.js 15 standalone server on port 3001.
+# The standalone output is built via:
+#   NEXT_OUTPUT=standalone pnpm --filter @crivacy/web build
+#
+# Installation on backend host (<BACKEND_API_HOST>):
+#   scp infra/systemd/crivacy-api.service root@<BACKEND_API_HOST>:/etc/systemd/system/
+#   ssh root@<BACKEND_API_HOST> "systemctl daemon-reload && systemctl enable --now crivacy-api"
+
+[Unit]
+Description=Crivacy KYC API (Next.js)
+Documentation=https://github.com/crivacy/crivacy
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=crivacy
+Group=crivacy
+
+WorkingDirectory=/opt/crivacy/api
+ExecStart=/usr/bin/node server.js
+
+# Environment file (secrets via sops-encrypted .env)
+EnvironmentFile=/opt/crivacy/api/.env
+
+# Production environment
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=HOSTNAME=127.0.0.1
+
+# Process management
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/crivacy/api/.next/cache
+ReadOnlyPaths=/opt/crivacy/api
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crivacy-api
+
+[Install]
+WantedBy=multi-user.target
