@@ -807,7 +807,7 @@ function buildGoSdkSnippet(ctx: TemplateContext): SdkSnippet {
 function goInit(ctx: TemplateContext): string {
   const m = SDK_METHODS.go;
   const scopeList = ctx.scopes.map((s) => `"${s}"`).join(', ');
-  return `import "github.com/crivacy-io/go-sdk"
+  return `import "github.com/UfukNode/Crivacy-FHE/go-sdk"
 
 client := crivacy.NewClient(crivacy.ClientOptions{
     ClientID:    "${ctx.clientId}",
@@ -834,7 +834,7 @@ function goCallback(ctx: TemplateContext): string {
 }) // Confidential client.`;
   return `import (
     "os"
-    "github.com/crivacy-io/go-sdk"
+    "github.com/UfukNode/Crivacy-FHE/go-sdk"
 )
 
 // In your callback handler:

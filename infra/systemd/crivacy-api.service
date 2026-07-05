@@ -10,7 +10,7 @@
 
 [Unit]
 Description=Crivacy KYC API (Next.js)
-Documentation=https://github.com/crivacy/crivacy
+Documentation=https://github.com/UfukNode/Crivacy-FHE
 After=network-online.target postgresql.service
 Wants=network-online.target
 Requires=postgresql.service

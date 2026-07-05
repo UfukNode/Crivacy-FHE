@@ -71,12 +71,12 @@ export function Footer() {
           <p className="text-center">
             Powered by Zama FHE. Open source at{" "}
             <a
-              href="https://github.com/crivacy-io"
+              href="https://github.com/UfukNode/Crivacy-FHE"
               target="_blank"
               rel="noopener noreferrer"
               className="text-text-secondary underline decoration-border-default underline-offset-4 transition-colors hover:text-accent-primary hover:decoration-accent-primary"
             >
-              github.com/crivacy-io
+              github.com/UfukNode/Crivacy-FHE
             </a>
           </p>
           <ScrambledText

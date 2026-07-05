@@ -422,7 +422,7 @@ export const SITE = {
           { label: "SDK", href: "/sdk" },
           {
             label: "Crivacy on GitHub",
-            href: "https://github.com/crivacy-io",
+            href: "https://github.com/UfukNode/Crivacy-FHE",
           },
           {
             label: "Zama FHE",
@@ -430,7 +430,7 @@ export const SITE = {
           },
           {
             label: "MIT license",
-            href: "https://github.com/crivacy-io",
+            href: "https://github.com/UfukNode/Crivacy-FHE",
           },
         ],
       },
@@ -448,7 +448,7 @@ export const SITE = {
       {
         label: "GitHub",
         icon: "/cc-github.svg",
-        href: "https://github.com/crivacy-io",
+        href: "https://github.com/UfukNode/Crivacy-FHE",
       },
       {
         label: "Contract",
@@ -478,7 +478,7 @@ export const SITE = {
     cta: {
       repo: {
         label: "View Crivacy on GitHub",
-        href: "https://github.com/crivacy-io",
+        href: "https://github.com/UfukNode/Crivacy-FHE",
       },
       cip: {
         label: "Read the docs",
@@ -499,7 +499,7 @@ export const SITE = {
         },
         {
           name: "@crivacy-fhe SDK",
-          href: "https://github.com/crivacy-io",
+          href: "https://github.com/UfukNode/Crivacy-FHE",
           tag: "MIT",
           role: "Open-source TypeScript SDK we authored: @crivacy-fhe/credential (issue, read, grant, decrypt) + @crivacy/js-sdk (OAuth 2.0 + OIDC + verifyDisclosure) + adapter-didit.",
         },
@@ -538,7 +538,7 @@ export const SITE = {
       body: "The SDK is community-friendly. Adapters for additional KYC vendors (Onfido, Veriff, Au10tix, Jumio, …) are the most-requested contribution.",
       cta: {
         label: "Open an issue",
-        href: "https://github.com/crivacy-io",
+        href: "https://github.com/UfukNode/Crivacy-FHE",
       },
     },
     pageFooter:

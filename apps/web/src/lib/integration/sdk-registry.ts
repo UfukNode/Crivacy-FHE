@@ -200,9 +200,9 @@ export const SDK_REGISTRY: Readonly<Record<SdkLanguageId, SdkPackageInfo>> = Obj
     className: 'Crivacy.Client',
   },
   go: {
-    packageName: 'github.com/crivacy-io/go-sdk',
+    packageName: 'github.com/UfukNode/Crivacy-FHE/go-sdk',
     registry: 'Go module',
-    registryUrl: 'https://pkg.go.dev/github.com/crivacy-io/go-sdk',
+    registryUrl: 'https://pkg.go.dev/github.com/UfukNode/Crivacy-FHE/go-sdk',
     className: 'crivacy.Client',
   },
   ruby: {
@@ -243,7 +243,7 @@ yarn add @crivacy/js-sdk`,
 // or Gradle (build.gradle.kts)
 implementation("io.crivacy:sdk:1.0.0")`,
   csharp: 'dotnet add package Crivacy.Sdk',
-  go: 'go get github.com/crivacy-io/go-sdk',
+  go: 'go get github.com/UfukNode/Crivacy-FHE/go-sdk',
   ruby: 'gem install crivacy',
 });
 
