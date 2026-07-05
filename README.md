@@ -20,7 +20,7 @@ a name, or a score.
 
 <br/>
 
-<table>
+<table width="100%">
 <tr>
 <td><b>Network</b></td><td>Sepolia</td>
 <td><b>Encryption</b></td><td>Zama FHEVM, <code>euint8</code> and <code>ebool</code></td>
