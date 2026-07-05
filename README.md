@@ -26,8 +26,8 @@ a name, or a score.
 <td><b>Encryption</b></td><td>Zama FHEVM, <code>euint8</code> and <code>ebool</code></td>
 </tr>
 <tr>
-<td><b>Registry</b></td><td><code>CrivacyKYC</code> · 0x91f4…Eb94B</td>
-<td><b>Soulbound pass</b></td><td><code>CrivacyKycNFT</code> · 0x27A9…F602a</td>
+<td><b>Registry</b></td><td><a href="https://sepolia.etherscan.io/address/0x91f410FfCF51abd0389890968b243bb9A32Eb94B"><code>CrivacyKYC</code> · 0x91f4…Eb94B</a></td>
+<td><b>Soulbound pass</b></td><td><a href="https://sepolia.etherscan.io/address/0x27A9E3DED8a97cC31F451302Fc069b42A72F602a"><code>CrivacyKycNFT</code> · 0x27A9…F602a</a></td>
 </tr>
 <tr>
 <td><b>Identity</b></td><td>Licensed KYC provider</td>
@@ -607,12 +607,12 @@ if (view.userRefHash.toLowerCase() !== keccak256(toBytes(claims.sub)).toLowerCas
 
 ## Smart contracts
 
-Deployed on Sepolia. Contract source: `CrivacyKYC` (crivacy-kyc-v2).
+Deployed on Sepolia. Contract source: `CrivacyKYC` (crivacy-kyc-v2). Click an address to open it on Etherscan.
 
-| Contract | Address | Role |
-|---|---|---|
-| CrivacyKYC | `0x91f410FfCF51abd0389890968b243bb9A32Eb94B` | Encrypted credential registry, keyed by wallet |
-| CrivacyKycNFT | `0x27A9E3DED8a97cC31F451302Fc069b42A72F602a` | Soulbound proof of a live credential |
+| Contract | Address (Sepolia) | Env var | Role |
+|---|---|---|---|
+| CrivacyKYC | [`0x91f410FfCF51abd0389890968b243bb9A32Eb94B`](https://sepolia.etherscan.io/address/0x91f410FfCF51abd0389890968b243bb9A32Eb94B) | `FHE_KYC_ADDRESS` | Encrypted credential registry, keyed by wallet |
+| CrivacyKycNFT | [`0x27A9E3DED8a97cC31F451302Fc069b42A72F602a`](https://sepolia.etherscan.io/address/0x27A9E3DED8a97cC31F451302Fc069b42A72F602a) | `FHE_NFT_ADDRESS` | Soulbound proof of a live credential |
 
 Selected functions on CrivacyKYC:
 
