@@ -3,7 +3,7 @@
 # (see `.github/dependabot.yml`, `package-ecosystem: docker`) opens a
 # bump PR when a newer digest ships so the pin stays current with
 # review rather than rotting unpatched.
-FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+FROM node:26-alpine@sha256:725aeba2364a9b16beae49e180d83bd597dbd0b15c47f1f28875c290bfd255b9
 WORKDIR /app
 COPY bot.mjs .
 # Default non-root user baked into the official image. Keeps the
