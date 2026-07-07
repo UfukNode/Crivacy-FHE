@@ -75,7 +75,7 @@
     "drizzle-orm": "0.45.2",
     "gray-matter": "^4.0.3",
     "isomorphic-dompurify": "^2.0.0",
-    "jose": "5.9.6",
+    "jose": "6.2.3",
     "libphonenumber-js": "^1.12.41",
     "lucide-react": "^1.8.0",
     "mermaid": "^11.14.0",
