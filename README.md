@@ -340,7 +340,7 @@ and what is left out on purpose.
 | One input proof per write, `FHE.fromExternal` | Active | All six fields encrypted in a single relayer bundle. |
 | Owner and operator decryption, `FHE.allow` / `FHE.allowThis` | Active | The holder reads their own level and score; the operator powers the server-side read. |
 | Trustless firm check on the plaintext lifecycle, `verify` and `isActive` | Active | A firm confirms an active credential straight from the chain, with no decryption. |
-| Per-firm encrypted verdict, `grantAccess` plus on-chain `FHE.ge` / `FHE.and` / `FHE.not` | Ready in the contract and SDK | The `eligible` verdict is computed on ciphertext and decrypted only by a granted firm. Switched on per integration; the demo relies on the plaintext lifecycle above. |
+| Per-firm encrypted verdict, `grantAccess` plus on-chain `FHE.ge` / `FHE.and` / `FHE.not` | Active | The `eligible` verdict is computed on ciphertext. On user consent the operator grants the firm on chain, and the firm decrypts only that one verdict with its own key via the relayer. |
 | Any KYC vendor behind one adapter | Active shape | The vendor sits behind an adapter (`fhe-adapter-*`). Whoever ran the check, the on-chain credential is encrypted the same way. |
 | ZK validator swap, `ValidatorType.ZK` and `migrateValidator` | Reserved | Re-point a credential to a ZK proof source without re-running KYC. |
 | Richer encrypted scoring, wider `euint` and homomorphic arithmetic | Reserved | Weighted or composite scores computed on ciphertext, beyond the current compare-only logic. |
@@ -511,8 +511,8 @@ document, and never asks a returning user to verify again.
 ## OAuth, the user, firm, and Crivacy
 
 A firm never holds a password for the user and never runs KYC. The link is a standard OAuth 2.1
-handoff with one on-chain step Crivacy adds. Solid arrows are live today. The dashed arrows are
-the per-firm encrypted verdict, wired in the contract and SDK and switched on per integration.
+handoff with one on-chain step Crivacy adds. On consent the operator grants the firm access on
+chain, and the firm decrypts the per-firm encrypted verdict with its own key via the relayer.
 
 ```mermaid
 flowchart LR
@@ -525,8 +525,8 @@ flowchart LR
     U -->|2 sign in, approve scopes| CR
     CR -->|3 code, then tokens and claims| F
     F -->|4 read verify, plaintext lifecycle| K
-    CR -.->|reserved: grantAccess the encrypted verdict| K
-    F -.->|reserved: decrypt eligible via relayer| K
+    CR -->|grantAccess the encrypted verdict| K
+    F -->|decrypt eligible via relayer| K
     CR -->|5 signed webhooks: created, revoked, expired| F
 
     classDef user fill:#eaf2ff,stroke:#4a78c0,color:#12233d
@@ -607,7 +607,7 @@ if (view.userRefHash.toLowerCase() !== keccak256(toBytes(claims.sub)).toLowerCas
 
 ## Smart contracts
 
-Deployed on Sepolia. Contract source: `CrivacyKYC` (crivacy-kyc-v2). Click an address to open it on Etherscan.
+Deployed on Sepolia. Contract source: [`fhevm/contracts/CrivacyKYC.sol`](fhevm/contracts/CrivacyKYC.sol). Click an address to open it on Etherscan.
 
 | Contract | Address (Sepolia) | Env var | Role |
 |---|---|---|---|
