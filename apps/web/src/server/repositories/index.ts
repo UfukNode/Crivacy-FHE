@@ -80,6 +80,8 @@ export {
   rotateApiKey,
   saveTotpSecret,
   updateFirm,
+  getFirmOnchainAddress,
+  setFirmOnchainAddress,
   updateSessionAfterRotate,
   findApiKeyForPlayground,
   resolveApiKeyByIdForPlayground,

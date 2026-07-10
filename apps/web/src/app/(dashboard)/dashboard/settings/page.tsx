@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LoadingButton } from '@/components/shared/loading-button';
 import { useFirmPermissions } from '@/hooks/use-firm-permissions';
+import { FirmWalletConnect } from './firm-wallet-connect';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -264,6 +265,11 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Separator />
+
+          {/* On-chain wallet (FHE grant target) */}
+          <FirmWalletConnect canUpdate={canUpdate} />
         </>
       )}
     </div>

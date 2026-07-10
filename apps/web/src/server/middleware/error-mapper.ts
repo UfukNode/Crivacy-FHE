@@ -22,6 +22,7 @@ import { PwnedPasswordError } from '@/lib/auth/pwned-passwords';
 import { CustomerError, type CustomerErrorCode } from '@/lib/customer/errors';
 import { DiditError, type DiditErrorCode } from '@crivacy-fhe/adapter-didit/errors';
 import { getRootLogger } from '@/lib/observability/logger';
+import { OauthError, type OauthErrorCode } from '@/lib/oauth/errors';
 import { RateLimitError } from '@/lib/ratelimit/errors';
 import { RbacError, type RbacErrorCode } from '@/lib/rbac/errors';
 
@@ -339,6 +340,54 @@ function mapZodError(err: ZodError): MappedError {
  * Ordering: the most common errors (AuthError from the auth middleware,
  * ZodError from request parsing) are checked first for fast-path.
  */
+// ---------------------------------------------------------------------------
+// OAuth error mapping
+// ---------------------------------------------------------------------------
+
+// OAuth-spec + internal authorize/consent/token errors → HTTP. Without this an
+// `OauthError` (e.g. a replayed/consumed consent request, or the losing side of
+// a concurrent approve) fell through to `internal_error`/500; every entry below
+// is a client-actionable 4xx (or a genuine 5xx for the server/config cases).
+const OAUTH_ERROR_MAP: Readonly<
+  Record<OauthErrorCode, { readonly code: ApiErrorCode; readonly status: number }>
+> = {
+  invalid_request: { code: 'invalid_request', status: 400 },
+  invalid_client: { code: 'oauth_failed', status: 401 },
+  unauthorized_client: { code: 'oauth_failed', status: 401 },
+  unsupported_response_type: { code: 'invalid_request', status: 400 },
+  invalid_scope: { code: 'invalid_request', status: 400 },
+  access_denied: { code: 'permission_denied', status: 403 },
+  server_error: { code: 'internal_error', status: 500 },
+  temporarily_unavailable: { code: 'upstream_unavailable', status: 503 },
+  invalid_grant: { code: 'invalid_request', status: 400 },
+  invalid_code: { code: 'invalid_request', status: 400 },
+  expired_code: { code: 'invalid_request', status: 400 },
+  used_code: { code: 'conflict', status: 409 },
+  code_reuse_detected: { code: 'conflict', status: 409 },
+  pkce_required: { code: 'invalid_request', status: 400 },
+  pkce_invalid: { code: 'invalid_request', status: 400 },
+  ip_bind_mismatch: { code: 'invalid_request', status: 400 },
+  redirect_uri_mismatch: { code: 'invalid_request', status: 400 },
+  client_secret_required: { code: 'oauth_failed', status: 401 },
+  client_revoked: { code: 'oauth_failed', status: 401 },
+  consent_required: { code: 'invalid_request', status: 400 },
+  consent_scope_escalation: { code: 'permission_denied', status: 403 },
+  consent_revoked: { code: 'invalid_request', status: 400 },
+  invalid_token: { code: 'invalid_session', status: 401 },
+  expired_token: { code: 'invalid_session', status: 401 },
+  revoked_token: { code: 'invalid_session', status: 401 },
+  insufficient_scope: { code: 'scope_forbidden', status: 403 },
+  request_not_found: { code: 'not_found', status: 404 },
+  request_expired: { code: 'invalid_request', status: 400 },
+  request_ip_mismatch: { code: 'invalid_request', status: 400 },
+  config_invalid: { code: 'internal_error', status: 500 },
+};
+
+function mapOauthError(err: OauthError): MappedError {
+  const entry = OAUTH_ERROR_MAP[err.code];
+  return { code: entry.code, message: err.message, status: entry.status };
+}
+
 export function mapErrorToResponse(err: unknown): MappedError {
   let mapped: MappedError;
 
@@ -361,6 +410,8 @@ export function mapErrorToResponse(err: unknown): MappedError {
     mapped = mapCustomerError(err);
   } else if (err instanceof RbacError) {
     mapped = mapRbacError(err);
+  } else if (err instanceof OauthError) {
+    mapped = mapOauthError(err);
   } else if (err instanceof ZodError) {
     mapped = mapZodError(err);
   } else if (err instanceof DiditError) {

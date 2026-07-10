@@ -39,6 +39,8 @@ import {
   verifyDisclosure,
   type CrivacyClaims,
 } from '@crivacy/js-sdk';
+import { decryptFirmEligibility, type FirmEligibilityResult } from '@crivacy-fhe/credential';
+import { isAddress, type Address, type Hex } from 'viem';
 
 import { listOauthIdentitiesForUser } from '../../data-store';
 import { TF_SESSION_COOKIE } from '../../session';
@@ -129,11 +131,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Surface the plaintext lifecycle the firm read straight from chain. The
-  // sensitive fields (level, score, verification flags, eligibility verdict)
-  // stay encrypted on chain as ciphertext handles; a firm granted per-firm ACL
-  // decrypts the `eligible` handle with the Zama SDK. The demo surfaces the
-  // plaintext lifecycle plus the handles for reference.
+  // --- FHE eligibility decrypt (the real gatekeeper payoff) -------------
+  //
+  // The firm decrypts ONLY the boolean `eligible` verdict for this user,
+  // signing with its OWN key (FIRM_EVM_PRIVATE_KEY) against the Zama relayer.
+  // The grant landed on chain when the user consented (operator ran
+  // `grantAccess`). If it hasn't yet, the firm-scoped handle is the zero
+  // handle → `pending`; the firm retries. Fully degraded-graceful: any
+  // decrypt error surfaces as `unavailable`, never a 500 — the plaintext
+  // lifecycle above is already the honest baseline verdict.
+  const eligibility = await computeFirmEligibility(
+    claims.fhe_kyc_user_address,
+    rpcUrl,
+    kycAddress,
+  );
+
+  // Surface the plaintext lifecycle the firm read straight from chain plus
+  // the decrypted eligibility verdict (or its pending/unavailable state).
   return NextResponse.json({
     verified: true,
     observedAt: new Date().toISOString(),
@@ -150,7 +164,50 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       isActive: view.isActive,
       encryptedHandles: view.handles,
     },
+    eligibility,
     message:
       'Credential read directly from the CrivacyKYC contract on Sepolia. Crivacy is not in the trust loop for this verification.',
   });
+}
+
+/** Eligibility verdict surfaced to the firm UI. */
+type EligibilityOutcome =
+  | FirmEligibilityResult
+  | { readonly status: 'unconfigured' }
+  | { readonly status: 'unavailable' };
+
+/**
+ * Decrypt the firm-scoped `eligible` verdict with the firm's own key. Returns
+ * a coarse status the UI can render without ever throwing into the route.
+ */
+async function computeFirmEligibility(
+  userAddressRaw: string | undefined,
+  rpcUrl: string | undefined,
+  kycAddress: Address | undefined,
+): Promise<EligibilityOutcome> {
+  const firmKey = process.env['FIRM_EVM_PRIVATE_KEY'];
+  if (
+    firmKey === undefined ||
+    !/^0x[0-9a-fA-F]{64}$/.test(firmKey) ||
+    rpcUrl === undefined ||
+    kycAddress === undefined ||
+    userAddressRaw === undefined ||
+    !isAddress(userAddressRaw)
+  ) {
+    // Firm hasn't configured its wallet key (or the credential carries no
+    // on-chain address) — the FHE verdict simply isn't wired for this firm.
+    return { status: 'unconfigured' };
+  }
+
+  try {
+    return await decryptFirmEligibility({
+      rpcUrl,
+      kycAddress,
+      firmPrivateKey: firmKey as Hex,
+      userAddress: userAddressRaw,
+    });
+  } catch {
+    // Relayer hiccup / ACL race — never fail the whole verify on it.
+    return { status: 'unavailable' };
+  }
 }

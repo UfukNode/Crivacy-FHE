@@ -36,6 +36,13 @@ export const firms = pgTable(
     billingEmail: varchar('billing_email', { length: 320 }),
     supportUrl: text('support_url'),
     notes: text('notes'),
+    // On-chain EVM address the firm registered (wallet connect, SIWE-proven).
+    // The gatekeeper `grantAccess(user, firm, minLevel)` targets THIS address
+    // per user at consent time; the firm decrypts the `eligible` verdict with
+    // the matching key (never held by Crivacy). Null until the firm connects a
+    // wallet. Stored lowercase, EIP-55 not enforced at rest (checksum is a
+    // display concern) — the CHECK constraint guarantees a 20-byte 0x hex.
+    onchainAddress: varchar('onchain_address', { length: 42 }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),

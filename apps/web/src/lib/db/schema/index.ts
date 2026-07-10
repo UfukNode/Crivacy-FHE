@@ -11,6 +11,7 @@
 
 export * from './enums';
 export * from './firms';
+export * from './firm-credential-grants';
 export * from './users';
 export * from './api-keys';
 export * from './rate-limit';

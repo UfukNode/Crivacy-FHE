@@ -513,6 +513,33 @@ export async function updateFirm(
   return row;
 }
 
+/* ---------- On-chain wallet ---------- */
+
+/** Read the firm's registered on-chain (EVM) address, or null if unset. */
+export async function getFirmOnchainAddress(ctx: DashboardContext): Promise<string | null> {
+  const rows = await ctx.db
+    .select({ onchainAddress: firms.onchainAddress })
+    .from(firms)
+    .where(eq(firms.id, ctx.firm.id))
+    .limit(1);
+  return rows[0]?.onchainAddress ?? null;
+}
+
+/**
+ * Set (or clear, when `address` is null) the firm's on-chain address. The
+ * caller must have proven control of `address` via a SIWE signature first.
+ * Stored lowercase so on-chain comparisons are stable.
+ */
+export async function setFirmOnchainAddress(
+  ctx: DashboardContext,
+  address: string | null,
+): Promise<void> {
+  await ctx.db
+    .update(firms)
+    .set({ onchainAddress: address === null ? null : address.toLowerCase(), updatedAt: new Date() })
+    .where(eq(firms.id, ctx.firm.id));
+}
+
 /* ---------- API keys ---------- */
 
 /**

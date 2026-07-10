@@ -11,6 +11,7 @@
     "clean": "rm -rf .next .turbo"
   },
   "dependencies": {
+    "@crivacy-fhe/credential": "workspace:*",
     "@crivacy/js-sdk": "workspace:*",
     "@node-rs/argon2": "2.0.2",
     "@radix-ui/react-tabs": "^1.1.13",

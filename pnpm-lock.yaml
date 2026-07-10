@@ -149,6 +149,9 @@ importers:
 
   apps/test-firm:
     dependencies:
+      '@crivacy-fhe/credential':
+        specifier: workspace:*
+        version: link:../../packages/fhe-credential
       '@crivacy/js-sdk':
         specifier: workspace:*
         version: link:../../packages/js-sdk

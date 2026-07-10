@@ -25,3 +25,9 @@ export {
 export { getFheConfig, __resetFheConfigForTests, type FheConfig } from './config';
 
 export { CRIVACY_KYC_ABI, CRIVACY_KYC_NFT_ABI } from './abi';
+
+export {
+  decryptFirmEligibility,
+  type FirmEligibilityParams,
+  type FirmEligibilityResult,
+} from './firm-decrypt';

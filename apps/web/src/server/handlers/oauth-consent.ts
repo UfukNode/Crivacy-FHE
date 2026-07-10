@@ -29,7 +29,9 @@ import { buildRequestContext as buildAuditRequestContext } from '@/lib/audit/con
 import { uuidTarget } from '@/lib/audit/targets';
 import { writeAudit } from '@/lib/audit/writer';
 import type { CrivacyDatabase } from '@/lib/db/client';
-import { oauthClients } from '@/lib/db/schema';
+import { firms, oauthClients } from '@/lib/db/schema';
+import { getCustomerWalletAddress } from '@/lib/fhe/customer-address';
+import { upsertPendingGrant } from '@/server/repositories/firm-grants';
 import {
   AUTHORIZATION_CODE_TTL_SECONDS,
   OAUTH_SCOPES,
@@ -331,12 +333,70 @@ export async function handleOauthConsentDecision(
     });
   }
 
+  // --- 4. FHE per-user access grant (gatekeeper handoff) ----------------
+  //
+  // Only on a NEW consent grant (a re-authorization against a still-valid
+  // cached consent already granted on chain; a level upgrade produces a new
+  // scope hash → new consent row → re-grants at the higher minLevel).
+  //
+  // We DON'T call the chain here — the ~15s grantAccess tx must never block
+  // the consent redirect. Instead we durably record the intent in
+  // `firm_credential_grants (status='pending')`; the grant worker drains it
+  // and calls `grantAccess(userAddress, firmAddress, minLevel)`.
+  //
+  // Fully best-effort and post-commit: the user's consent is already
+  // committed, so a bookkeeping failure here must never deny it. It also
+  // no-ops cleanly when the firm hasn't connected a wallet (no on-chain
+  // address) or the user has no wallet address — the plaintext-lifecycle
+  // verify path still works; only the encrypted-verdict decrypt waits.
+  if (txResult.newlyCreatedConsent !== null) {
+    try {
+      const firmAddress = await findFirmOnchainAddress(deps.db, clientRow.firmId);
+      if (firmAddress !== null) {
+        const userAddress = await getCustomerWalletAddress(deps.db, input.userId);
+        if (userAddress !== null) {
+          await upsertPendingGrant(deps.db, {
+            firmId: clientRow.firmId,
+            customerId: input.userId,
+            userAddress,
+            firmAddress,
+            // `requiredLevel` is the max KYC level the consented scopes demand
+            // (null when no KYC scope is requested — grant eligibility at the
+            // baseline `basic` so the firm can still read an active verdict).
+            minLevel: requiredLevel ?? 'basic',
+            now: deps.now,
+          });
+        }
+      }
+    } catch {
+      // Swallow — consent is committed; the grant is a downstream side
+      // effect. An operator sweep / next consent re-enqueues.
+    }
+  }
+
   const url = new URL(authRequest.redirectUri);
   url.searchParams.set('code', rawCode);
   if (authRequest.state !== null) {
     url.searchParams.set('state', authRequest.state);
   }
   return { redirectUrl: url.toString() };
+}
+
+/**
+ * Read a firm's registered on-chain (EVM) address, or null when the firm
+ * has not connected a wallet. The gatekeeper `grantAccess` targets this
+ * address; without it there is nothing to grant to.
+ */
+async function findFirmOnchainAddress(
+  db: CrivacyDatabase,
+  firmId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ onchainAddress: firms.onchainAddress })
+    .from(firms)
+    .where(and(eq(firms.id, firmId), isNull(firms.deletedAt)))
+    .limit(1);
+  return rows[0]?.onchainAddress ?? null;
 }
 
 /**

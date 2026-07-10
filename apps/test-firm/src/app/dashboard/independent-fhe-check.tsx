@@ -17,6 +17,13 @@
 import { useState } from 'react';
 import { ChevronRight, Loader2, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
 
+/** Firm-decrypted eligibility verdict (or its non-decrypted state). */
+type EligibilitySummary =
+  | { readonly status: 'granted'; readonly eligible: boolean }
+  | { readonly status: 'pending' }
+  | { readonly status: 'unavailable' }
+  | { readonly status: 'unconfigured' };
+
 interface ActiveVerdict {
   readonly kind: 'active';
   readonly status: string;
@@ -28,6 +35,7 @@ interface ActiveVerdict {
   readonly contractShort: string;
   readonly userRefHashShort: string;
   readonly proofHashShort: string;
+  readonly eligibility: EligibilitySummary;
 }
 
 interface RevokedVerdict {
@@ -70,6 +78,17 @@ function formatRelative(iso: string): string {
   if (deltaSec < 60) return `${deltaSec}s ago`;
   if (deltaSec < 3600) return `${Math.round(deltaSec / 60)}m ago`;
   return new Date(then).toLocaleString();
+}
+
+function parseEligibility(raw: unknown): EligibilitySummary {
+  if (typeof raw !== 'object' || raw === null) return { status: 'unconfigured' };
+  const status = (raw as Record<string, unknown>)['status'];
+  if (status === 'granted') {
+    return { status: 'granted', eligible: (raw as Record<string, unknown>)['eligible'] === true };
+  }
+  if (status === 'pending') return { status: 'pending' };
+  if (status === 'unavailable') return { status: 'unavailable' };
+  return { status: 'unconfigured' };
 }
 
 export function IndependentFheCheck() {
@@ -124,6 +143,7 @@ export function IndependentFheCheck() {
           contractShort,
           userRefHashShort: truncateMiddle(userRefHash, 10, 8),
           proofHashShort: truncateMiddle(proofHash, 10, 8),
+          eligibility: parseEligibility(body['eligibility']),
         });
       }
     } catch (err) {
@@ -249,14 +269,73 @@ function VerdictPanel({ verdict }: { readonly verdict: Verdict }) {
             <Row label="network" value={verdict.network ?? '-'} />
             <Row label="observed" value={formatRelative(verdict.observedAt)} />
           </dl>
-          <p className="mt-3 text-[12px] text-stone-400">
-            Level, human score and verification flags are stored as FHE ciphertext on chain,
-            unreadable here. A firm granted per-firm access by Crivacy decrypts only the boolean
-            eligibility verdict via the Zama relayer.
-          </p>
+          <EligibilityBlock eligibility={verdict.eligibility} />
         </div>
       </div>
     </div>
+  );
+}
+
+function EligibilityBlock({ eligibility }: { readonly eligibility: EligibilitySummary }) {
+  if (eligibility.status === 'granted') {
+    const ok = eligibility.eligible;
+    return (
+      <div
+        className={`mt-4 rounded-md border px-3 py-2.5 ${
+          ok
+            ? 'border-emerald-800/60 bg-emerald-950/30'
+            : 'border-amber-800/60 bg-amber-950/30'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {ok ? (
+            <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" strokeWidth={1.75} />
+          ) : (
+            <ShieldAlert className="h-4 w-4 text-amber-400" aria-hidden="true" strokeWidth={1.75} />
+          )}
+          <p className={`text-[13px] font-medium ${ok ? 'text-emerald-100' : 'text-amber-100'}`}>
+            {ok ? 'Eligible' : 'Not eligible'}
+            <span className="ml-1.5 font-normal opacity-80">
+              (decrypted from FHE ciphertext via the Zama relayer)
+            </span>
+          </p>
+        </div>
+        <p className="mt-1.5 text-[11.5px] text-stone-400">
+          We decrypted only this one boolean verdict with our own key. Level, human score and the
+          verification flags stay encrypted on chain — we never see them, and neither does anyone else.
+        </p>
+      </div>
+    );
+  }
+
+  if (eligibility.status === 'pending') {
+    return (
+      <div className="mt-4 rounded-md border border-stone-800 bg-stone-900/40 px-3 py-2.5">
+        <p className="text-[13px] font-medium text-stone-200">Eligibility grant landing on chain</p>
+        <p className="mt-1 text-[11.5px] text-stone-400">
+          Crivacy granted this firm access when you consented; the FHE verdict decrypts once that
+          per-user grant tx is mined. Re-run the check in a moment.
+        </p>
+      </div>
+    );
+  }
+
+  if (eligibility.status === 'unavailable') {
+    return (
+      <p className="mt-3 text-[12px] text-stone-400">
+        Encrypted level, score and flags stay on chain. The eligibility decrypt is momentarily
+        unavailable (relayer); the plaintext lifecycle above is authoritative meanwhile.
+      </p>
+    );
+  }
+
+  // unconfigured — this firm hasn't wired a decrypt key.
+  return (
+    <p className="mt-3 text-[12px] text-stone-400">
+      Level, human score and verification flags are stored as FHE ciphertext on chain, unreadable
+      here. A firm granted per-firm access by Crivacy decrypts only the boolean eligibility verdict
+      via the Zama relayer.
+    </p>
   );
 }
 

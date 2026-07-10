@@ -13,9 +13,15 @@ const nextConfig = {
   poweredByHeader: false,
   devIndicators: false,
   ...(standaloneMode ? { output: standaloneMode } : {}),
-  // `@node-rs/argon2` is a native addon used to hash the harness's own local
-  // user passwords; it cannot be bundled by webpack — require() it at runtime.
-  serverExternalPackages: ['@node-rs/argon2'],
+  // `@crivacy-fhe/credential` ships raw TS (main: ./src/index.ts) — run it
+  // through this app's TS pipeline so the firm-side FHE decrypt helper compiles.
+  transpilePackages: ['@crivacy-fhe/credential'],
+  // `@node-rs/argon2` is a native addon (password hashing). `@zama-fhe/sdk`
+  // uses a Node worker pool + tfhe WASM for relayer decrypt that webpack /
+  // Turbopack mangle when bundled (the relayer's GENERATE_KEYPAIR call hangs).
+  // Requiring both at runtime keeps the firm eligibility decrypt working inside
+  // the Next route, exactly as it does in a plain node script.
+  serverExternalPackages: ['@node-rs/argon2', '@zama-fhe/sdk'],
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
   typedRoutes: true,

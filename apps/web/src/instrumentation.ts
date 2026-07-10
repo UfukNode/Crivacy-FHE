@@ -83,6 +83,7 @@ export async function register(): Promise<void> {
     await initIdempotencySweeperWorker(logger);
     await initKycReconcilerWorker(logger);
     await initIpAbusePrunerWorker(logger);
+    await initFirmGrantWorker(logger);
   } catch (err) {
     // Non-fatal — the API still works, just without metrics/traces/structured logs.
     console.warn('[instrumentation] init failed, skipping:', err);
@@ -499,6 +500,54 @@ async function initIdempotencySweeperWorker(logger: WorkerLogger): Promise<void>
  * itself — readers already filter by `last_seen >= cutoff`, so this
  * is storage hygiene, not a correctness gate.
  */
+/**
+ * Start the firm access-grant worker. Every-minute cron sweep drains
+ * `firm_credential_grants` rows the OAuth consent handler wrote and calls the
+ * on-chain `grantAccess(user, firm, minLevel)` so a relying firm can decrypt
+ * the encrypted eligibility verdict for a consenting user. The ~15s tx runs
+ * here, off the consent request path.
+ */
+async function initFirmGrantWorker(logger: WorkerLogger): Promise<void> {
+  const connectionString = process.env['DATABASE_URL'];
+  if (connectionString === undefined || connectionString.length === 0) {
+    logger.info('DATABASE_URL not set — firm-grant worker not started');
+    return;
+  }
+
+  try {
+    const { createQueueClient } = await import(/* webpackIgnore: true */ './server/jobs/queue');
+    const { registerFirmGrantWorker } = await import(/* webpackIgnore: true */      './server/jobs/firm-grant-worker'
+    );
+    const { getDatabaseClient } = await import(/* webpackIgnore: true */ './lib/db/client');
+
+    const boss = await createQueueClient(connectionString);
+    const { db } = getDatabaseClient();
+
+    await registerFirmGrantWorker(boss, { db, logger });
+    logger.info('Firm access-grant worker registered (1-min cron)');
+
+    const shutdown = async (): Promise<void> => {
+      try {
+        await boss.stop();
+        logger.info('Firm access-grant pg-boss stopped');
+      } catch (stopErr) {
+        logger.error('Firm access-grant pg-boss stop failed', {
+          error: stopErr instanceof Error ? stopErr.message : String(stopErr),
+        });
+      }
+    };
+
+    process.once('SIGTERM', () => { void shutdown(); });
+    process.once('SIGINT', () => { void shutdown(); });
+  } catch (err) {
+    // Non-fatal — the consent handler still records pending grant rows;
+    // they drain on the next deploy that brings the worker up.
+    logger.error('Firm access-grant worker init failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function initIpAbusePrunerWorker(logger: WorkerLogger): Promise<void> {
   const connectionString = process.env['DATABASE_URL'];
   if (connectionString === undefined || connectionString.length === 0) {

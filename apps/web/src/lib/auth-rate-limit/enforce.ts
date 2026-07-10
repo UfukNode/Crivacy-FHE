@@ -118,6 +118,8 @@ export type AuthRateLimitEndpoint =
   | 'firm_totp_setup'
   | 'firm_recovery_codes_regenerate'
   | 'firm_profile_update'
+  | 'firm_wallet_challenge'
+  | 'firm_wallet_connect'
   | 'firm_users_invite'
   | 'firm_users_role_change'
   | 'firm_users_remove'
@@ -302,6 +304,11 @@ const POLICIES: Readonly<Record<AuthRateLimitEndpoint, AuthRateLimitPolicy>> = {
   // while still capping a stolen-session abuse vector that would
   // otherwise spam audit log entries.
   firm_profile_update: { max: 20, windowSeconds: 15 * 60 },
+  // Wallet proof-of-control: a challenge then a signed verify. Both are
+  // deliberate human actions done rarely; keep a tight cap so a stolen
+  // session can't grind signature attempts.
+  firm_wallet_challenge: { max: 15, windowSeconds: 15 * 60 },
+  firm_wallet_connect: { max: 15, windowSeconds: 15 * 60 },
   // Team-management endpoints. Inviting fires a transactional email
   // to the invitee — stricter cap than profile ops because that side
   // effect is visible outside the firm. Role changes and removals are
