@@ -122,7 +122,7 @@
     "@types/react-dom": "19.0.2",
     "@types/sharp": "^0.32.0",
     "@types/ua-parser-js": "^0.7.39",
-    "@vitejs/plugin-react": "4.3.4",
+    "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "2.1.8",
     "autoprefixer": "10.4.20",
     "drizzle-kit": "0.31.10",
