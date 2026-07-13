@@ -27,7 +27,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "viem": "^2.54.3"
+    "viem": "^2.55.1"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
