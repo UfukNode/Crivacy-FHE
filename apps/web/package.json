@@ -83,7 +83,7 @@
     "next-mdx-remote": "^6.0.0",
     "nodemailer": "^8.0.5",
     "pg": "8.13.1",
-    "pg-boss": "10.4.2",
+    "pg-boss": "12.26.0",
     "pino": "^10.3.1",
     "pino-abstract-transport": "^3.0.0",
     "prom-client": "^15.1.3",
