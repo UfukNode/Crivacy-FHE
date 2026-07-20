@@ -26,8 +26,8 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@zama-fhe/sdk": "^3.2.0",
-    "viem": "^2.54.3"
+    "@zama-fhe/sdk": "^3.3.0",
+    "viem": "^2.55.4"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
