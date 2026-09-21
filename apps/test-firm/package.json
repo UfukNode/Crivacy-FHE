@@ -13,27 +13,27 @@
   "dependencies": {
     "@crivacy-fhe/credential": "workspace:*",
     "@crivacy/js-sdk": "workspace:*",
-    "@node-rs/argon2": "2.0.2",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@zama-fhe/sdk": "^3.2.0",
+    "@node-rs/argon2": "2.2.1",
+    "@radix-ui/react-tabs": "^1.1.21",
+    "@zama-fhe/sdk": "^3.6.0",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.47.0",
     "next": "15.5.15",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "shiki": "^4.0.2",
-    "tailwind-merge": "^3.5.0",
-    "viem": "^2.54.3",
-    "zod": "4.3.6"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "shiki": "^4.4.3",
+    "tailwind-merge": "^3.7.0",
+    "viem": "^2.56.7",
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.0.0-beta.7",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "22.10.2",
-    "@types/react": "19.0.2",
-    "@types/react-dom": "19.0.2",
-    "autoprefixer": "10.4.20",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "autoprefixer": "10.6.1",
     "postcss": "8.4.49",
-    "tailwindcss": "4.0.0-beta.7",
+    "tailwindcss": "4.3.3",
     "typescript": "5.6.3"
   }
 }
